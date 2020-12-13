@@ -1,0 +1,11 @@
+# Virtual env files
+venv/
+
+# Python generated files
+__pycache__/
+
+# Data
+data/
+
+# Idea files
+.idea/
