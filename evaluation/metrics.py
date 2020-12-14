@@ -8,7 +8,9 @@ smoothing_coeff = 1e-6
 def iou(preds: torch.Tensor,
         labels: torch.Tensor):
     """
+
     Compute IoU scores given batches of predictions and labels
+    The IoU is referred also as the Jaccard index.
 
     :param preds: batch of mask predictions
     :param labels: batch of mask labels
@@ -25,14 +27,17 @@ def iou(preds: torch.Tensor,
     return (intersections + smoothing_coeff) / (unions + smoothing_coeff)
 
 
-def dice_loss(preds: torch.Tensor,
-              labels: torch.Tensor):
+def dice_coefficient(preds: torch.Tensor,
+                     labels: torch.Tensor):
     """
-    Compute the dice loss given batches of predictions and labels
+
+    Compute the dice coefficient given batches of predictions and labels.
+    https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient.
+    This is the metric used in the competition.
 
     :param preds: batch of mask predictions
     :param labels: batch of mask labels
-    :return: the dice loss for each pair in the batch
+    :return: the dice coefficient for each pair in the batch
     """
     # If the outputs are from a neural network they might have 4 dimensions (batch_size, 1, width, height)
     if preds.ndim == 4:
@@ -44,7 +49,8 @@ def dice_loss(preds: torch.Tensor,
 def pixel_accuracy(preds: torch.Tensor,
                    labels: torch.Tensor):
     """
-    Compute the pixel accuracy score given batches of predictions and labels
+
+    Compute the pixel accuracy score given batches of predictions and labels.
 
     :param preds: batch of mask predictions
     :param labels: batch of mask labels
