@@ -1,11 +1,13 @@
 import os
 import random
+from typing import Tuple
 
 import torchvision
 from PIL import Image
 
 import torch
 import numpy as np
+from torch import Tensor
 
 from torch.utils.data import Dataset
 
@@ -13,7 +15,7 @@ from torch.utils.data import Dataset
 def get_training_validation_sets(images_path: str,
                                  masks_path: str,
                                  validation_percentage: float,
-                                 dataset_transforms: dict):
+                                 dataset_transforms: dict) -> Tuple[Dataset, set, Dataset, set]:
     """
 
     :param images_path: path of the folder containing all the images
@@ -60,14 +62,14 @@ class HuBMAPDataset(Dataset):
         self.mask_path = masks_path
         self.transforms = transforms
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
 
         :return: the dataset length
         """
         return len(self.images)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
         """
         Apply transformations and return the image and its mask
 

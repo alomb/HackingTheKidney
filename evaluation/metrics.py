@@ -1,12 +1,11 @@
-import torch
-
+from torch import Tensor
 
 # smoothing value to avoid undefined and undetermined operations during the computations
 smoothing_coeff = 1e-6
 
 
-def iou(preds: torch.Tensor,
-        labels: torch.Tensor):
+def iou(preds: Tensor,
+        labels: Tensor) -> Tensor:
     """
 
     Compute IoU scores given batches of predictions and labels
@@ -27,8 +26,8 @@ def iou(preds: torch.Tensor,
     return (intersections + smoothing_coeff) / (unions + smoothing_coeff)
 
 
-def dice_coefficient(preds: torch.Tensor,
-                     labels: torch.Tensor):
+def dice_coefficient(preds: Tensor,
+                     labels: Tensor) -> Tensor:
     """
 
     Compute the dice coefficient given batches of predictions and labels.
@@ -46,8 +45,8 @@ def dice_coefficient(preds: torch.Tensor,
     return (2. * preds.eq(labels).long().sum() + smoothing_coeff) / (labels.sum() + preds.sum() + smoothing_coeff)
 
 
-def pixel_accuracy(preds: torch.Tensor,
-                   labels: torch.Tensor):
+def pixel_accuracy(preds: Tensor,
+                   labels: Tensor) -> Tensor:
     """
 
     Compute the pixel accuracy score given batches of predictions and labels.

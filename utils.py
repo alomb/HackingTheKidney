@@ -1,8 +1,10 @@
 import numpy as np
 
+import torch
+
 
 def rle_decode(mask_rle: str,
-               shape: tuple):
+               shape: tuple) -> np.array:
     """
 
     Decode the RLE string.
@@ -23,7 +25,7 @@ def rle_decode(mask_rle: str,
     return img.reshape(shape)
 
 
-def rle_encode(img: np.array):
+def rle_encode(img: np.array) -> str:
     """
 
     Encode the mask in the RLE format.
@@ -40,7 +42,7 @@ def rle_encode(img: np.array):
     return ' '.join(str(x) for x in runs)
 
 
-def rle_encode_less_memory(img: np.array):
+def rle_encode_less_memory(img: np.array) -> str:
     """
 
     Avoid the OOM exception caused by the np.concatenate function.
@@ -59,3 +61,50 @@ def rle_encode_less_memory(img: np.array):
     runs = np.where(pixels[1:] != pixels[:-1])[0] + 2
     runs[1::2] -= runs[::2]
     return ' '.join(str(x) for x in runs)
+
+
+def get_device() -> str:
+    device = "cpu"
+    if torch.cuda.is_available:
+        print('All good, a GPU is available')
+        device = torch.device("cuda:0")
+    else:
+        print('Please set GPU via Edit -> Notebook Settings.')
+
+    return device
+
+
+def set_deterministic_colab(seed: int,
+                            set_deterministic: bool = False) -> None:
+    """
+
+    Set a deterministic behaviour.
+    https://pytorch.org/docs/stable/notes/randomness.html
+
+    :param seed: the seed to set for PyTorch and Numpy
+    :param set_deterministic: if True configure PyTorch to use deterministic algorithms instead of nondeterministic
+    ones where available, and to throw an error if an operation is known to be nondeterministic (and without a
+    deterministic alternative).
+
+    :raise RuntimeError: if the version used is not supported
+    """
+
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    # Configure cuDNN to deterministically select an algorithm at each run
+    # Set False to change this behaviour, performance may be impacted
+    torch.backends.cudnn.benchmark = True
+    # Configure cuDNN to choose deterministic algorithms
+    torch.backends.cudnn.deterministic = True
+
+    # Configure PyTorch to use deterministic algorithms
+    if set_deterministic:
+        version = torch.__version__.split('+')[0]
+        major, minor, patch = version.split(".")
+        major, minor, patch = int(major), int(minor), int(patch)
+
+        if major >= 1 and minor >= 7:
+            torch.set_deterministic(True)
+        else:
+            raise RuntimeError('PyTorch 1.7 or higher is required to use PyTorch deterministic algorithms.')

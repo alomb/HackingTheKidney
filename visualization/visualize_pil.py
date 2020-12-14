@@ -1,3 +1,5 @@
+from typing import Iterable
+
 import matplotlib.pyplot as plt
 
 
@@ -7,7 +9,7 @@ def display_pil_images(images: list,
                        columns: int = 5,
                        width: int = 20,
                        height: int = 8,
-                       label_font_size: int = 9):
+                       label_font_size: int = 9) -> None:
     """
 
     Plot multiple images (max 15) in a grid-like structure. Masks are applied over images.
@@ -49,7 +51,7 @@ def display_pil_images(images: list,
     plt.show()
 
 
-def visualize(**images):
+def visualize(**images: Iterable) -> None:
     """
 
     Plot PIL images in one row.
