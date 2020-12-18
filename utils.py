@@ -13,7 +13,6 @@ def rle_decode(mask_rle: str,
     :param shape: (height,width) of  array to return
     :return: numpy array where 1 is mask and 0 is background
     """
-
     s = mask_rle.split()
     starts, lengths = [np.asarray(x, dtype=int) for x in (s[0::2], s[1::2])]
     starts -= 1
@@ -33,7 +32,6 @@ def rle_encode(img: np.array) -> str:
     :param img: numpy array where 1 is mask and 0 is background
     :return: run length as formatted string
     """
-
     pixels = img.T.flatten()
     pixels = np.concatenate([[0], pixels, [0]])
 
@@ -52,7 +50,6 @@ def rle_encode_less_memory(img: np.array) -> str:
     :param img: numpy array where 1 is mask and 0 is background
     :return: run length as formatted string
     """
-
     pixels = img.T.flatten()
     # This simplified method requires first and last pixel to be zero
     pixels[0] = 0
@@ -63,7 +60,13 @@ def rle_encode_less_memory(img: np.array) -> str:
     return ' '.join(str(x) for x in runs)
 
 
-def get_device() -> str:
+def get_device_colab() -> str:
+    """
+
+    Check GPU's availability.
+
+    :return: the device name
+    """
     device = "cpu"
     if torch.cuda.is_available:
         print('All good, a GPU is available')
@@ -88,7 +91,6 @@ def set_deterministic_colab(seed: int,
 
     :raise RuntimeError: if the version used is not supported
     """
-
     torch.manual_seed(seed)
     np.random.seed(seed)
 

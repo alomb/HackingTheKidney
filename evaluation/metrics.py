@@ -15,7 +15,6 @@ def iou(preds: Tensor,
     :param labels: batch of mask labels
     :return: the IoU score for each pair in the batch
     """
-
     # If the outputs are from a neural network they might have 4 dimensions (batch_size, 1, width, height)
     if preds.ndim == 4:
         preds = preds.squeeze(1)

@@ -24,7 +24,6 @@ def get_training_validation_sets(images_path: str,
     :param dataset_transforms: transformations for the training and validation sets
     :return: a torch.utils.data.Dataset and list of filenames for both training and validation splits
     """
-
     training_images = set(os.listdir(images_path))
 
     validation_images = set(random.sample(os.listdir(images_path),
