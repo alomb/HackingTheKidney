@@ -7,9 +7,7 @@ def get_deeplabv3_resnet(device: str,
                          resnet_layers: int = 50,
                          freeze_backbone=True,
                          progress: bool = True):
-
     """
-
     Constructs a DeepLabV3 model with a ResNet-50/101 backbone.
     https://arxiv.org/abs/1706.05587
 

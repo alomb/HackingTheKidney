@@ -6,6 +6,8 @@ __pycache__/
 
 # Data
 data/
+logs/
+.ipynb_checkpoints/
 
 # Idea files
 .idea/

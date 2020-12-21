@@ -11,7 +11,6 @@ def display_pil_images(images: list,
                        height: int = 8,
                        label_font_size: int = 9) -> None:
     """
-
     Plot multiple images (max 15) in a grid-like structure. Masks are applied over images.
 
     :param images: list of PIL images
@@ -22,6 +21,7 @@ def display_pil_images(images: list,
     :param height: plot's height
     :param label_font_size: label's font size
     """
+
     max_images = 15
 
     if len(images) > max_images:
@@ -53,11 +53,11 @@ def display_pil_images(images: list,
 
 def visualize(**images: Iterable) -> None:
     """
-
     Plot PIL images in one row.
 
     :param images list of PIL images
     """
+
     n = len(images)
     plt.figure(figsize=(16, 5))
     for i, (name, image) in enumerate(images.items()):
