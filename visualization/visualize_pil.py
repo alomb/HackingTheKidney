@@ -51,11 +51,11 @@ def display_pil_images(images: list,
     plt.show()
 
 
-def visualize(**images: Iterable) -> None:
+def visualize(**images: dict) -> None:
     """
-    Plot PIL images in one row.
+    Plot images in one row.
 
-    :param images list of PIL images
+    :param images: dictionary of names and images as NumPy arrays,
     """
 
     n = len(images)

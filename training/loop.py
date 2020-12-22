@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Union
 
 import numpy as np
+from tqdm import tqdm
 
 import torch
 from torch.nn import Module
@@ -105,13 +106,15 @@ class Trainer:
         :param device: device used
         """
 
+        # TODO in the future consider avoiding copy and pass the model
         self.model = model
         self.threshold = threshold
         self.criterion = criterion
         self.optimizer = optimizer
         self.batch_size = batch_size
         self.training_data_loader = DataLoader(training_dataset,
-                                               batch_size=batch_size)
+                                               batch_size=batch_size,
+                                               shuffle=True)
         self.root_path = root_path
         self.device = device
 
@@ -150,9 +153,9 @@ class Trainer:
         epoch_start_time = time.time()
         for epoch in range(1, epochs + 1):
             if verbose:
-                print(f"Training epoch {epoch}:")
+                print(f"Training epoch {epoch}/{epochs}:")
 
-            for images, masks in iter(self.training_data_loader):
+            for images, masks in tqdm(iter(self.training_data_loader)):
                 batch_start_time = time.time()
 
                 images = images.to(self.device)
@@ -171,10 +174,10 @@ class Trainer:
                 preds = (outputs['out'] > self.threshold).long()
 
                 # Update stats
-                stats.update(epoch, 'loss', loss)
-                stats.update(epoch, 'iou', iou(preds, masks).mean())
-                stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean())
-                stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean())
+                stats.update(epoch, 'loss', loss.item())
+                stats.update(epoch, 'iou', iou(preds, masks).mean().item())
+                stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
+                stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
                 stats.update(epoch, 'batch_train_time', time.time() - batch_start_time)
 
             if weights_dir is not None and weights_dir != '':
