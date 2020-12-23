@@ -10,6 +10,8 @@ from torchvision import transforms
 import torch
 from torch.utils.data import Dataset
 
+from visualization.visualize_data import visualize
+
 
 def get_training_validation_sets(images_path: str,
                                  masks_path: str,
@@ -30,12 +32,14 @@ def get_training_validation_sets(images_path: str,
     :return: a torch.utils.data.Dataset and list of filenames for both training and validation splits
     """
 
+    # Computes filenames/images identifiers
     training_images = set(os.listdir(images_path))
 
     validation_images = set(random.sample(os.listdir(images_path),
                                           int(validation_percentage * len(training_images))))
     training_images -= validation_images
 
+    # Creates datasets
     training_set = HuBMAPDataset(list(training_images),
                                  images_path,
                                  masks_path,
@@ -51,6 +55,24 @@ def get_training_validation_sets(images_path: str,
                                    std)
 
     return training_set, training_images, validation_set, validation_images
+
+
+def denormalize_images(images: torch.FloatTensor,
+                       mean: list[float],
+                       std: list[float]) -> None:
+    """
+    Denormalize images.
+
+    :param images: a image/batch of images
+    :param mean: mean previously applied to normalize each channel (RGB)
+    :param std: standard deviation previously applied to normalize each channel (RGB)
+    :return: denormalized image/batch of images
+    """
+    denormalize_transformation = transforms.Compose([transforms.Normalize(mean=[0., 0., 0.],
+                                                                          std=[1 / std[0], 1 / std[1], 1 / std[2]]),
+                                                     transforms.Normalize(mean=[-mean[0], -mean[1], -mean[2]],
+                                                                          std=[1., 1., 1.])])
+    return denormalize_transformation(images)
 
 
 class HuBMAPDataset(Dataset):
@@ -99,12 +121,16 @@ class HuBMAPDataset(Dataset):
         """
 
         filename = self.images[index]
+        # A HxWx3 numpy array
         img = np.array(Image.open(os.path.join(self.image_path, filename)).convert('RGB'))
+        # A HxW numpy array
         mask = np.array(Image.open(os.path.join(self.mask_path, filename)))
 
+        # Apply augmentations
         if self.augmentations is not None:
             transformed = self.augmentations(image=img, mask=mask)
             img = transformed['image']
             mask = transformed['mask']
 
+        # Transform to tensor
         return self.to_tensor(img), torch.from_numpy(np.array(mask)).long()

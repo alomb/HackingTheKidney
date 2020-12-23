@@ -1,7 +1,8 @@
-from typing import Iterable
-
 import matplotlib.pyplot as plt
 
+import numpy as np
+import torch
+from torchvision.transforms import transforms
 
 def display_pil_images(images: list,
                        masks: list = None,
@@ -11,6 +12,7 @@ def display_pil_images(images: list,
                        height: int = 8,
                        label_font_size: int = 9) -> None:
     """
+    From https://www.kaggle.com/mariazorkaltseva/hubmap-seresnext50-unet-dice-loss
     Plot multiple images (max 15) in a grid-like structure. Masks are applied over images.
 
     :param images: list of PIL images
@@ -53,14 +55,29 @@ def display_pil_images(images: list,
 
 def visualize(**images: dict) -> None:
     """
-    Plot images in one row.
+    Plot images in one row. Remember to apply any operations to invert your transformations, such as denormalization,
+    before passing to this function.
 
-    :param images: dictionary of names and images as NumPy arrays,
+    :param images: dictionary of names and images as PIL images, NumPy arrays or PyTorch tensors.
     """
 
     n = len(images)
     plt.figure(figsize=(16, 5))
+
     for i, (name, image) in enumerate(images.items()):
+        # If input is a NumPy array, check if the color channels are in the last dimension
+        if type(image) in [np.ndarray] and image.shape[0] in [1, 3]:
+            image = image.reshape((image.shape[1], image.shape[2], -1))
+
+        # If input is a PyTorch tensor containing floating point numbers transform to a PIL image using the
+        # appropriate transformations
+        if type(image) is torch.Tensor and image.dtype in [torch.float, torch.double]:
+            # Expects a PyTorch tensor with values between 0 and 1
+            image = transforms.ToPILImage()(image)
+        elif type(image) is torch.Tensor and image.dtype in [torch.int, torch.long]:
+            # Otherwise the image is considered to have values between 0 and 255
+            image.numpy()
+
         plt.subplot(1, n, i + 1)
         plt.xticks([])
         plt.yticks([])

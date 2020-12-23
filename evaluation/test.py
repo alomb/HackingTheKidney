@@ -63,7 +63,7 @@ def make_grid(shape: Tuple[int, int],
 
 class Test:
     """
-    Class responsible of testing a trained model.
+    Class responsible for testing a trained model.
     """
 
     def __init__(self,
