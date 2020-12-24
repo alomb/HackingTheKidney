@@ -1,10 +1,12 @@
+from typing import Tuple
+
 import numpy as np
 
 import torch
 
 
 def rle_decode(mask_rle: str,
-               shape: tuple) -> np.array:
+               shape: Tuple[int, int]) -> np.array:
     """
 
     Decode the RLE string.

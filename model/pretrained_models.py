@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, List, Dict
 
 import torch.nn
 from torchvision import models
@@ -48,9 +48,9 @@ def get_deeplabv3_resnet(device: str,
 def get_unet(device: str,
              encoder_weights: str = 'imagenet',
              encoder: str = 'efficientnet-b0',
-             decoder_channels: list[int] = (256, 128, 64, 32, 16),
+             decoder_channels: List[int] = (256, 128, 64, 32, 16),
              freeze_backbone: bool = True,
-             depth: int = 5) -> Tuple[torch.nn.Module, dict]:
+             depth: int = 5) -> Tuple[torch.nn.Module, Dict]:
     """
     Constructs a Unet model with a custom backbone.
     https://arxiv.org/abs/1505.04597

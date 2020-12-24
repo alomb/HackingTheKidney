@@ -1,3 +1,5 @@
+from typing import List, Dict
+
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -5,9 +7,9 @@ import torch
 from torchvision.transforms import transforms
 
 
-def display_images_and_masks(images: list,
-                             masks: list = None,
-                             labels: list = None,
+def display_images_and_masks(images: List,
+                             masks: List = None,
+                             labels: List = None,
                              columns: int = 5,
                              width: int = 20,
                              height: int = 8,
@@ -54,7 +56,7 @@ def display_images_and_masks(images: list,
     plt.show()
 
 
-def visualize(**images: dict) -> None:
+def visualize(**images: Dict) -> None:
     """
     Plot images in one row. Remember to apply any operations to invert your transformations, such as denormalization,
     before passing to this function.

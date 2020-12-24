@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Tuple
+from typing import Tuple, List, Dict
 
 import albumentations
 from PIL import Image
@@ -10,15 +10,13 @@ from torchvision import transforms
 import torch
 from torch.utils.data import Dataset
 
-from visualization.visualize_data import visualize
-
 
 def get_training_validation_sets(images_path: str,
                                  masks_path: str,
                                  validation_percentage: float,
-                                 dataset_augmentations: dict,
-                                 mean: list[float],
-                                 std: list[float]) -> Tuple[Dataset, set, Dataset, set]:
+                                 dataset_augmentations: Dict,
+                                 mean: List[float],
+                                 std: List[float]) -> Tuple[Dataset, set, Dataset, set]:
     """
     Function used to build datasets and filenames of training and validation splits.
 
@@ -58,8 +56,8 @@ def get_training_validation_sets(images_path: str,
 
 
 def denormalize_images(images: torch.FloatTensor,
-                       mean: list[float],
-                       std: list[float]) -> None:
+                       mean: List[float],
+                       std: List[float]) -> None:
     """
     Denormalize images.
 
@@ -81,12 +79,12 @@ class HuBMAPDataset(Dataset):
     """
 
     def __init__(self,
-                 images: list[str],
+                 images: List[str],
                  images_path: str,
                  masks_path: str,
                  augmentations: albumentations.Compose,
-                 mean: list[float],
-                 std: list[float]):
+                 mean: List[float],
+                 std: List[float]):
         """
         :param images: list of sample names
         :param images_path: path of the folder containing all the images

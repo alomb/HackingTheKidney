@@ -2,7 +2,7 @@ import os
 import time
 from collections import OrderedDict
 from datetime import datetime
-from typing import Union, Optional
+from typing import Union, Optional, List, Dict, Tuple
 
 import numpy as np
 from tqdm import tqdm
@@ -22,7 +22,7 @@ class Statistics:
 
     def __init__(self,
                  epochs: int,
-                 metrics: list[str],
+                 metrics: List[str],
                  accumulate: bool = False):
         """
         :param epochs: number of total epochs
@@ -57,7 +57,7 @@ class Statistics:
             # Update counter
             self.stats[epoch][stat][1] = (curr_value[1] + 1) if curr_value[1] is not None else 1
 
-    def get_all_averages(self) -> dict:
+    def get_all_averages(self) -> Dict:
         """
         :return: averaged statistics at each epoch
         """
@@ -67,7 +67,7 @@ class Statistics:
         else:
             return {e: {s: (self.stats[e][s][0] / self.stats[e][s][1]) for s in self.stats[e]} for e in self.stats}
 
-    def get_averaged_stat(self, stat: str) -> list:
+    def get_averaged_stat(self, stat: str) -> List:
         """
         :param stat: the selected state
         :return: the state stats averaged at each epoch
@@ -193,7 +193,7 @@ class Trainer:
               weights_dir: str = datetime.now().strftime("%d_%m_%y_%H_%M_%S"),
               validate: bool = True,
               verbose: bool = False,
-              limit: int = 2) -> tuple[Statistics, Optional[Statistics]]:
+              limit: int = 2) -> Tuple[Statistics, Optional[Statistics]]:
         """
         Train the model
 

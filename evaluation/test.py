@@ -2,7 +2,7 @@ import gc
 import glob
 import os
 import pathlib
-from typing import Tuple
+from typing import Tuple, Dict
 
 import rasterio
 from rasterio.windows import Window
@@ -89,7 +89,7 @@ class Test:
         self.min_overlap = min_overlap
         self.device = device
 
-    def test(self, output_csv_file: str, verbose: bool = False) -> dict:
+    def test(self, output_csv_file: str, verbose: bool = False) -> Dict:
         """
         Evaluate the model on the images in the given directory.
 
