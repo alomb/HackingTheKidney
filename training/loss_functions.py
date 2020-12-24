@@ -14,8 +14,13 @@ class BinaryDiceLoss(Module):
     dice_loss = (1 - dice_coefficient)
     """
 
-    def __init__(self):
+    def __init__(self, logits: bool = True,):
+        """
+
+        :param logits: if True it expects predictions as logits, so it passes them into a sigmoid function
+        """
         super(BinaryDiceLoss, self).__init__()
+        self.logits = logits
 
     def forward(self,
                 preds: Tensor,
@@ -34,6 +39,10 @@ class BinaryDiceLoss(Module):
         if preds.ndim == 4:
             preds = preds.squeeze(1)
 
+        # Apply sigmoid if the network outputs are logits
+        if self.logits:
+            preds = F.sigmoid(preds)
+
         return torch.mean(1. - (2. * (preds * labels).sum((1, 2)) + SMOOTHING_COEFFICIENT) /
                                 (labels.sum((1, 2)) + preds.sum((1, 2)) + SMOOTHING_COEFFICIENT))
 
@@ -48,14 +57,17 @@ class BinaryFocalLoss(Module):
     """
 
     def __init__(self,
+                 logits: bool = True,
                  gamma: float = 0.0,
                  alpha: float = 1.0):
         """
+        :param logits: if True it expects predictions as logits, so it uses binary_cross_entropy_with_logits
         :param gamma: the focusing parameter (e.g. 0, 0.5, 1, 2, 5)
         :param alpha: the weight to apply to the foreground class
         """
 
         super(BinaryFocalLoss, self).__init__()
+        self.logits = logits
         self.gamma = gamma
         self.alpha = alpha
 
@@ -76,9 +88,14 @@ class BinaryFocalLoss(Module):
         if preds.ndim == 4:
             preds = preds.squeeze(1)
 
-        logpt = F.binary_cross_entropy(preds,
-                                       labels,
-                                       reduction='none')
+        if self.logits:
+            logpt = F.binary_cross_entropy_with_logits(preds,
+                                                       labels,
+                                                       reduction='none')
+        else:
+            logpt = F.binary_cross_entropy(preds,
+                                           labels,
+                                           reduction='none')
 
         pt = torch.clamp(-logpt.exp(), min=-100)
         return torch.mean(self.alpha * ((1 - pt) ** self.gamma) * logpt)

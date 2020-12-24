@@ -50,7 +50,8 @@ def get_unet(device: str,
              encoder: str = 'efficientnet-b0',
              decoder_channels: List[int] = (256, 128, 64, 32, 16),
              freeze_backbone: bool = True,
-             depth: int = 5) -> Tuple[torch.nn.Module, Dict]:
+             depth: int = 5,
+             activation: str = 'sigmoid') -> Tuple[torch.nn.Module, Dict]:
     """
     Constructs a Unet model with a custom backbone.
     https://arxiv.org/abs/1505.04597
@@ -69,6 +70,8 @@ def get_unet(device: str,
     :param freeze_backbone: if True backbone's parameters are set to not require grads
     :param depth: specify a number of downsampling operations in the encoder. You can make your model lighter
     specifying smaller depth.
+    :param activation: An activation function to apply after the final convolution layer. Available options are
+    "sigmoid", "softmax", "logsoftmax", "identity", callable and None. Default is None.
     :return: the model abd the preprocessing parameters associated to the pretrained model
     """
 
@@ -78,7 +81,8 @@ def get_unet(device: str,
                      decoder_channels=decoder_channels,
                      decoder_attention_type=None,
                      in_channels=3,
-                     classes=1).to(device)
+                     classes=1,
+                     activation=activation).to(device)
 
     # TODO Freeze backbone
 

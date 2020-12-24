@@ -303,7 +303,7 @@ class Trainer:
             if validate:
                 if verbose:
                     print(f"{'-' * 100}\nValidation phase:")
-                self.evaluate(epoch, eval_stats, verbose)
+                self.evaluate(epoch, eval_stats, verbose, limit=limit)
 
             if verbose:
                 print(f"{'=' * 100}")
