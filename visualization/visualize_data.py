@@ -4,20 +4,21 @@ import numpy as np
 import torch
 from torchvision.transforms import transforms
 
-def display_pil_images(images: list,
-                       masks: list = None,
-                       labels: list = None,
-                       columns: int = 5,
-                       width: int = 20,
-                       height: int = 8,
-                       label_font_size: int = 9) -> None:
+
+def display_images_and_masks(images: list,
+                             masks: list = None,
+                             labels: list = None,
+                             columns: int = 5,
+                             width: int = 20,
+                             height: int = 8,
+                             label_font_size: int = 9) -> None:
     """
     From https://www.kaggle.com/mariazorkaltseva/hubmap-seresnext50-unet-dice-loss
     Plot multiple images (max 15) in a grid-like structure. Masks are applied over images.
 
-    :param images: list of PIL images
-    :param masks: list of PIL masks
-    :param labels: image labels
+    :param images: list of NumPy arrays or PIL images
+    :param masks: optional list of NumPy arrays or PIL masks
+    :param labels: optional image labels
     :param columns: number of columns to display
     :param width: plot's width
     :param height: plot's height
