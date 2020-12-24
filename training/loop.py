@@ -1,7 +1,8 @@
 import os
 import time
+from collections import OrderedDict
 from datetime import datetime
-from typing import Union
+from typing import Union, Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -16,7 +17,7 @@ from preprocessing.dataset import HuBMAPDataset
 
 class Statistics:
     """
-    Class used to register and keep track of the training statistics.
+    Class used to register and keep track of the training and evaluating statistics.
     """
 
     def __init__(self,
@@ -91,19 +92,21 @@ class Trainer:
                  threshold: float,
                  criterion: Module,
                  optimizer: torch.optim.Optimizer,
-                 training_dataset: HuBMAPDataset,
                  batch_size: int,
+                 device: str,
                  root_path: str,
-                 device: str):
+                 training_dataset: HuBMAPDataset,
+                 validation_dataset: Optional[HuBMAPDataset] = None):
         """
         :param model: model to train
         :param threshold: minimum value used to threshold model outputs: predicted mask = output > threshold
         :param criterion: loss function
         :param optimizer: optimizer used during training
-        :param training_dataset: custom dataset to retrieve images and masks
         :param batch_size: size of batches used to create a DataLoader
-        :param root_path: the path of the root
         :param device: device used
+        :param root_path: the path of the root
+        :param training_dataset: custom dataset to retrieve images and masks for training
+        :param validation_dataset: optional custom dataset to retrieve images and masks for validation
         """
 
         # TODO in the future consider avoiding copy and pass the model
@@ -115,20 +118,91 @@ class Trainer:
         self.training_data_loader = DataLoader(training_dataset,
                                                batch_size=batch_size,
                                                shuffle=True)
+        self.validation_data_loader = DataLoader(validation_dataset,
+                                                 batch_size=batch_size,
+                                                 shuffle=True)
         self.root_path = root_path
         self.device = device
+
+    def evaluate(self,
+                 epoch: int,
+                 stats: Statistics,
+                 verbose: bool = True,
+                 limit: int = 2) -> None:
+        """
+        Method used to evaluate the model
+
+        :param epoch: current epoch
+        :param stats: statistics tracker
+        :param verbose: if True print progress and info during evaluation
+        :param limit TODO remove it
+        """
+
+        with torch.no_grad():
+            epoch_start_time = time.time()
+
+            if verbose:
+                data_stream = tqdm(iter(self.validation_data_loader))
+            else:
+                data_stream = iter(self.validation_data_loader)
+
+            # TODO REMOVE
+            l = limit
+            for images, masks in data_stream:
+
+                # TODO REMOVE
+                if l == 0:
+                    break
+                l -= 1
+
+                batch_start_time = time.time()
+
+                images = images.to(self.device)
+                masks = masks.to(self.device)
+
+                outputs = self.model(images)
+
+                # To handle torchvision.models
+                if type(outputs) is dict:
+                    outputs = outputs['out']
+
+                loss = self.criterion(outputs, masks)
+
+                preds = (outputs > self.threshold).long()
+
+                # Update stats
+                stats.update(epoch, 'loss', loss.item())
+                stats.update(epoch, 'iou', iou(preds, masks).mean().item())
+                stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
+                stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
+                stats.update(epoch, 'batch_eval_time', time.time() - batch_start_time)
+
+        stats.update(epoch, 'epoch_eval_time', time.time() - epoch_start_time)
+        if verbose:
+            print(f"Evaluation ended in {stats.stats[epoch]['epoch_eval_time'][-1]} seconds")
+            print('Average eval batch time', np.mean(stats.stats[epoch]['batch_eval_time']), 'seconds')
+            print('Average loss', np.mean(stats.stats[epoch]['loss']))
+            print('Metrics:')
+            print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
+            print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
+            print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
+            print(f"{'-' * 100}")
 
     def train(self,
               epochs: int,
               weights_dir: str = datetime.now().strftime("%d_%m_%y_%H_%M_%S"),
-              verbose: bool = False) -> Statistics:
+              validate: bool = True,
+              verbose: bool = False,
+              limit: int = 2) -> tuple[Statistics, Optional[Statistics]]:
         """
         Train the model
 
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights
+        :param validate: if True at the end of each epoch compute stats on the validation set
         :param verbose: if True print progress and info during training
-        :return: statistics
+        :param limit TODO remove it
+        :return: statistics of training and if required of evaluation
         """
 
         # Set training mode
@@ -144,18 +218,46 @@ class Trainer:
                             'pixel_accuracy'],
                            accumulate=True)
 
+        # Check if the validation dataset has been defined
+        if validate and self.validation_data_loader is None:
+            validate = False
+
+        if validate:
+            eval_stats = Statistics(epochs,
+                                    ['epoch_eval_time',
+                                     'batch_eval_time',
+                                     'loss',
+                                     'iou',
+                                     'dice_coefficient',
+                                     'pixel_accuracy'],
+                                    accumulate=True)
+        else:
+            eval_stats = None
+
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
             weights_dir = os.path.join(self.root_path, weights_dir)
             if not os.path.exists(weights_dir):
                 os.makedirs(weights_dir, exist_ok=True)
 
-        epoch_start_time = time.time()
         for epoch in range(1, epochs + 1):
+            epoch_start_time = time.time()
+
             if verbose:
                 print(f"Training epoch {epoch}/{epochs}:")
+                data_stream = tqdm(iter(self.training_data_loader))
+            else:
+                data_stream = iter(self.training_data_loader)
 
-            for images, masks in tqdm(iter(self.training_data_loader)):
+            # TODO REMOVE
+            l = limit
+            for images, masks in data_stream:
+
+                # TODO REMOVE
+                if l == 0:
+                    break
+                l -= 1
+
                 batch_start_time = time.time()
 
                 images = images.to(self.device)
@@ -165,13 +267,18 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 outputs = self.model(images)
-                loss = self.criterion(outputs['out'], masks)
+
+                # To handle torchvision.models
+                if type(outputs) is OrderedDict:
+                    outputs = outputs['out']
+
+                loss = self.criterion(outputs, masks)
 
                 # Backward and optimize
                 loss.backward()
                 self.optimizer.step()
 
-                preds = (outputs['out'] > self.threshold).long()
+                preds = (outputs > self.threshold).long()
 
                 # Update stats
                 stats.update(epoch, 'loss', loss.item())
@@ -189,9 +296,16 @@ class Trainer:
                 print('Average training batch time', np.mean(stats.stats[epoch]['batch_train_time']), 'seconds')
                 print('Average loss', np.mean(stats.stats[epoch]['loss']))
                 print('Metrics:')
-                print('Average IoU \t\t\t\t', np.mean(stats.stats[epoch]['iou']))
+                print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
                 print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
                 print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
-                print(f"{'-'*100}")
 
-        return stats
+            if validate:
+                if verbose:
+                    print(f"{'-' * 100}\nValidation phase:")
+                self.evaluate(epoch, eval_stats, verbose)
+
+            if verbose:
+                print(f"{'=' * 100}")
+
+        return stats, eval_stats

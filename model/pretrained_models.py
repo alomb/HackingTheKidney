@@ -1,12 +1,17 @@
+from typing import Tuple
+
+import torch.nn
 from torchvision import models
 from torchvision.models.segmentation.deeplabv3 import DeepLabHead
+
+import segmentation_models_pytorch as smp
 
 
 def get_deeplabv3_resnet(device: str,
                          pretrained: bool = True,
                          resnet_layers: int = 50,
-                         freeze_backbone=True,
-                         progress: bool = True):
+                         freeze_backbone: bool = True,
+                         progress: bool = True) -> torch.nn.Module:
     """
     Constructs a DeepLabV3 model with a ResNet-50/101 backbone.
     https://arxiv.org/abs/1706.05587
@@ -24,7 +29,7 @@ def get_deeplabv3_resnet(device: str,
     :param resnet_layers: type of backbone, 101 = ResNet-101, 50 = ResNet-50
     :param freeze_backbone: if True backbone's parameters are set to not require grads
     :param progress: if True a progress bar is printed
-    :return:
+    :return: the model
     """
 
     if resnet_layers == 101:
@@ -38,3 +43,43 @@ def get_deeplabv3_resnet(device: str,
     model.classifier = DeepLabHead(2048, 1)
     model.backbone.requires_grad = not freeze_backbone
     return model
+
+
+def get_unet(device: str,
+             encoder_weights: str = 'imagenet',
+             encoder: str = 'efficientnet-b0',
+             decoder_channels: list[int] = (256, 128, 64, 32, 16),
+             freeze_backbone: bool = True,
+             depth: int = 5) -> Tuple[torch.nn.Module, dict]:
+    """
+    Constructs a Unet model with a custom backbone.
+    https://arxiv.org/abs/1505.04597
+
+    Information regarding the possible encoders and their weights are available in the following link
+    https://github.com/qubvel/segmentation_models.pytorch#encoders-
+
+    Information (channels, range of values, mean, std) regarding the preprocessing step on the pretrained encoder is
+    returned as well.
+
+    :param device: device where the model is loaded
+    :param encoder: type of encoder
+    :param encoder_weights: the dataset where the encoder was pretrained
+    :param decoder_channels: integers which specify in_channels parameter for convolutions used in decoder.
+    Its length should be the same as **encoder_depth**
+    :param freeze_backbone: if True backbone's parameters are set to not require grads
+    :param depth: specify a number of downsampling operations in the encoder. You can make your model lighter
+    specifying smaller depth.
+    :return: the model abd the preprocessing parameters associated to the pretrained model
+    """
+
+    model = smp.Unet(encoder_name=encoder,
+                     encoder_depth=depth,
+                     encoder_weights=encoder_weights,
+                     decoder_channels=decoder_channels,
+                     decoder_attention_type=None,
+                     in_channels=3,
+                     classes=1).to(device)
+
+    # TODO Freeze backbone
+
+    return model, smp.encoders.get_preprocessing_params(encoder)
