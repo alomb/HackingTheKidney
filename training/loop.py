@@ -1,3 +1,6 @@
+import enum
+import math
+import warnings
 import os
 import time
 import pickle
@@ -7,6 +10,7 @@ from typing import Union, Optional, List, Dict, Tuple
 
 import numpy as np
 import pandas as pd
+from torchvision.transforms import transforms
 from tqdm import tqdm
 
 import torch
@@ -14,7 +18,22 @@ from torch.nn import Module
 from torch.utils.data import DataLoader
 
 from evaluation.metrics import iou, pixel_accuracy, dice_coefficient
-from preprocessing.dataset import HuBMAPDataset
+from preprocessing.dataset import HuBMAPDataset, denormalize_images
+from visualization.visualize_data import display_images_and_masks
+
+
+class TrainerVerbosity(enum.Enum):
+    """
+    Enumerator used to specify the verbosity of the training loop
+    """
+    # Print only information regarding the progress
+    PROGRESS = 1
+    # Print saved statistics at each epoch
+    STATISTICS = 2
+    # Print involved tensors
+    TENSORS = 3
+    # Show involved images
+    IMAGES = 4
 
 
 class Statistics:
@@ -137,36 +156,61 @@ class Trainer:
         self.validation_data_loader = DataLoader(validation_dataset,
                                                  batch_size=batch_size,
                                                  shuffle=True)
+        # Get mean and std from datasets to denormalize and show images
+        self.mean = training_dataset.mean
+        self.std = training_dataset.std
         self.root_path = root_path
         self.device = device
+
+    def print_stats(self,
+                    stats: Statistics,
+                    epoch: int,
+                    print_epoch_time: bool):
+        """
+        Print current epoch statistics
+
+        :param stats: statistics
+        :param epoch: current epoch
+        :param print_epoch_time: if True prints the epoch/evaluation duration.
+        """
+
+        # Time is already indicated by tqdm
+        if print_epoch_time:
+            print(f"Epoch/Evaluation ended in {round(stats.stats[epoch]['epoch_time'][-1])} seconds")
+        print('Average batch time \t', round(np.mean(stats.stats[epoch]['batch_time'])), 'seconds')
+        print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']), 4))
+        print('Metrics:')
+        print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
+        print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
+        print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
     def evaluate(self,
                  epoch: int,
                  stats: Statistics,
-                 verbose: bool = True,
-                 limit: int = 2) -> None:
+                 verbosity_level: List[TrainerVerbosity] = (),
+                 limit: int = math.inf) -> None:
         """
         Method used to evaluate the model
 
         :param epoch: current epoch
         :param stats: statistics tracker
-        :param verbose: if True print progress and info during evaluation
-        :param limit TODO remove it
+        :param verbosity_level: List containing different keys for each type of requested information
+        :param limit TODO remove this
         """
 
         with torch.no_grad():
             epoch_start_time = time.time()
 
-            if verbose:
+            if TrainerVerbosity.PROGRESS in verbosity_level:
                 data_stream = tqdm(iter(self.validation_data_loader))
             else:
                 data_stream = iter(self.validation_data_loader)
 
-            # TODO REMOVE
+            # TODO remove this
             l = limit
             for images, masks in data_stream:
 
-                # TODO REMOVE
+                # TODO remove this
                 if l == 0:
                     break
                 l -= 1
@@ -186,39 +230,61 @@ class Trainer:
 
                 preds = (outputs > self.threshold).long()
 
+                # Print tensors
+                if TrainerVerbosity.TENSORS in verbosity_level:
+                    print(f'Image ({images.shape}):\n{images}\n')
+                    print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
+                    print(f'Masks ({masks.shape}):\n{masks}\n')
+                    print(f'Outputs ({outputs.shape}):\n{outputs}\n')
+                    print(f'Max and min value: {outputs.max().item()}, {outputs.min().item()}\n')
+                    print(f'Predictions ({preds.shape}):\n{preds}\n')
+                    print(f'Loss:\n{loss}\n')
+
+                # Show images
+                if TrainerVerbosity.IMAGES in verbosity_level:
+                    for i in range(len(images)):
+                        # Denormalize and then transform to PIL image
+                        denormalized_images = transforms.ToPILImage()(denormalize_images(images[i],
+                                                                                         self.mean,
+                                                                                         self.std))
+
+                        display_images_and_masks(images=[denormalized_images] * 3,
+                                                 masks=[masks[i].unsqueeze(2),
+                                                        outputs[i].permute(1, 2, 0),
+                                                        preds[i].permute(1, 2, 0)])
+
                 # Update stats
                 stats.update(epoch, 'loss', loss.item())
                 stats.update(epoch, 'iou', iou(preds, masks).mean().item())
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
-                stats.update(epoch, 'batch_eval_time', time.time() - batch_start_time)
+                stats.update(epoch, 'batch_time', time.time() - batch_start_time)
 
-        stats.update(epoch, 'epoch_eval_time', time.time() - epoch_start_time)
-        if verbose:
-            print(f"Evaluation ended in {stats.stats[epoch]['epoch_eval_time'][-1]} seconds")
-            print('Average eval batch time', np.mean(stats.stats[epoch]['batch_eval_time']), 'seconds')
-            print('Average loss', np.mean(stats.stats[epoch]['loss']))
-            print('Metrics:')
-            print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
-            print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
-            print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
+        stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
+        # Print stats
+        if TrainerVerbosity.STATISTICS in verbosity_level:
+            self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level)
             print(f"{'-' * 100}")
 
     def train(self,
               epochs: int,
               weights_dir: str = 'dmyhms',
-              validate: bool = True,
-              verbose: bool = False,
-              limit: int = 2) -> Tuple[Statistics, Optional[Statistics]]:
+              evaluate: bool = True,
+              verbosity_level: List[TrainerVerbosity] = (),
+              evaluation_verbosity_level: List[TrainerVerbosity] = (),
+              limit: int = math.inf,
+              evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
         Train the model
 
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
         in DD_MM_YY_HH_MM_SS format
-        :param validate: if True at the end of each epoch compute stats on the validation set
-        :param verbose: if True print progress and info during training
-        :param limit TODO remove it
+        :param evaluate: if True at the end of each epoch compute stats on the validation set
+        :param verbosity_level: list containing different keys for each type of requested information (training)
+        :param evaluation_verbosity_level: list containing different keys for each type of requested information
+        :param limit: the number of batches to debug TODO remove this
+        :param evaluation_limit: the number of batches to debug in evaluation TODO remove this
         :return: statistics of training and if required of evaluation
         """
 
@@ -228,31 +294,28 @@ class Trainer:
         # Set training mode
         self.model.train()
 
+        stats_keys = ['epoch_time',
+                      'batch_time',
+                      'loss',
+                      'iou',
+                      'dice_coefficient',
+                      'pixel_accuracy']
+
         # Initialize statistics
         stats = Statistics(epochs,
-                           ['epoch_train_time',
-                            'batch_train_time',
-                            'loss',
-                            'iou',
-                            'dice_coefficient',
-                            'pixel_accuracy'],
+                           stats_keys,
                            accumulate=True)
 
         # Check if the validation dataset has been defined
-        if validate and self.validation_data_loader is None:
-            validate = False
+        if evaluate and self.validation_data_loader is None:
+            evaluate = False
+            warnings.warn("evaluate is True but no validation dataset has been passed! Evaluation will be skipped.")
 
-        if validate:
+        eval_stats = None
+        if evaluate:
             eval_stats = Statistics(epochs,
-                                    ['epoch_eval_time',
-                                     'batch_eval_time',
-                                     'loss',
-                                     'iou',
-                                     'dice_coefficient',
-                                     'pixel_accuracy'],
+                                    stats_keys,
                                     accumulate=True)
-        else:
-            eval_stats = None
 
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
@@ -263,17 +326,17 @@ class Trainer:
         for epoch in range(1, epochs + 1):
             epoch_start_time = time.time()
 
-            if verbose:
+            if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f"Training epoch {epoch}/{epochs}:")
                 data_stream = tqdm(iter(self.training_data_loader))
             else:
                 data_stream = iter(self.training_data_loader)
 
-            # TODO REMOVE
+            # TODO remove this
             l = limit
             for images, masks in data_stream:
 
-                # TODO REMOVE
+                # TODO remove this
                 if l == 0:
                     break
                 l -= 1
@@ -300,32 +363,50 @@ class Trainer:
 
                 preds = (outputs > self.threshold).long()
 
+                # Print tensors
+                if TrainerVerbosity.TENSORS in verbosity_level:
+                    print(f'Image ({images.shape}):\n{images}\n')
+                    print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
+                    print(f'Masks ({masks.shape}):\n{masks}\n')
+                    print(f'Outputs ({outputs.shape}):\n{outputs}\n')
+                    print(f'Max and min value: {outputs.max().item()}, {outputs.min().item()}\n')
+                    print(f'Predictions ({preds.shape}):\n{preds}\n')
+                    print(f'Loss:\n{loss}\n')
+
+                # Show images
+                if TrainerVerbosity.IMAGES in verbosity_level:
+                    for i in range(len(images)):
+                        # Denormalize and then transform to PIL image
+                        denormalized_images = transforms.ToPILImage()(denormalize_images(images[i],
+                                                                                         self.mean,
+                                                                                         self.std))
+
+                        display_images_and_masks(images=[denormalized_images] * 3,
+                                                 masks=[masks[i].unsqueeze(2),
+                                                        outputs[i].detach().permute(1, 2, 0),
+                                                        preds[i].detach().permute(1, 2, 0)])
+
                 # Update stats
                 stats.update(epoch, 'loss', loss.item())
                 stats.update(epoch, 'iou', iou(preds, masks).mean().item())
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
-                stats.update(epoch, 'batch_train_time', time.time() - batch_start_time)
+                stats.update(epoch, 'batch_time', time.time() - batch_start_time)
 
             if weights_dir is not None and weights_dir != '':
                 torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
-            stats.update(epoch, 'epoch_train_time', time.time() - epoch_start_time)
-            if verbose:
-                print(f"Epoch {epoch} ended in {stats.stats[epoch]['epoch_train_time'][-1]} seconds")
-                print('Average training batch time', np.mean(stats.stats[epoch]['batch_train_time']), 'seconds')
-                print('Average loss', np.mean(stats.stats[epoch]['loss']))
-                print('Metrics:')
-                print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
-                print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
-                print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
+            stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
+            # Print stats
+            if TrainerVerbosity.STATISTICS in verbosity_level:
+                self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level)
 
-            if validate:
-                if verbose:
+            if evaluate:
+                if TrainerVerbosity.PROGRESS in verbosity_level:
                     print(f"{'-' * 100}\nValidation phase:")
-                self.evaluate(epoch, eval_stats, verbose, limit=limit)
+                self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
 
-            if verbose:
+            if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f"{'=' * 100}")
 
         return stats, eval_stats

@@ -57,7 +57,7 @@ def get_training_validation_sets(images_path: str,
 
 def denormalize_images(images: torch.FloatTensor,
                        mean: List[float],
-                       std: List[float]) -> None:
+                       std: List[float]) -> torch.FloatTensor:
     """
     Denormalize images.
 
@@ -102,6 +102,8 @@ class HuBMAPDataset(Dataset):
         # channel with the given mean and standard deviation.
         self.to_tensor = transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize(mean, std)])
+        self.mean = mean
+        self.std = std
 
     def __len__(self) -> int:
         """
