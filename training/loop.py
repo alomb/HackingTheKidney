@@ -1,10 +1,12 @@
 import os
 import time
-from collections import OrderedDict
+import pickle
 from datetime import datetime
+from collections import OrderedDict
 from typing import Union, Optional, List, Dict, Tuple
 
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 import torch
@@ -78,8 +80,22 @@ class Statistics:
         else:
             return [self.stats[e][stat][0] / self.stats[e][stat][1] for e in self.stats]
 
+    def save(self, path: str) -> None:
+        """
+        Save the stats using pickle.
+
+        :param path: where to save the stats
+        """
+        with open(path, 'wb') as handle:
+            pickle.dump(self.stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     def __str__(self) -> str:
-        return self.stats.__str__()
+        """
+
+        :return: string used to print the object
+        """
+        return pd.DataFrame.from_dict(self.stats,
+                                      orient='index').to_string()
 
 
 class Trainer:
@@ -163,7 +179,7 @@ class Trainer:
                 outputs = self.model(images)
 
                 # To handle torchvision.models
-                if type(outputs) is dict:
+                if type(outputs) is OrderedDict:
                     outputs = outputs['out']
 
                 loss = self.criterion(outputs, masks)
@@ -190,7 +206,7 @@ class Trainer:
 
     def train(self,
               epochs: int,
-              weights_dir: str = datetime.now().strftime("%d_%m_%y_%H_%M_%S"),
+              weights_dir: str = 'dmyhms',
               validate: bool = True,
               verbose: bool = False,
               limit: int = 2) -> Tuple[Statistics, Optional[Statistics]]:
@@ -198,12 +214,16 @@ class Trainer:
         Train the model
 
         :param epochs: number of epochs used to train
-        :param weights_dir: path of the directory from the root used to save weights
+        :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
+        in DD_MM_YY_HH_MM_SS format
         :param validate: if True at the end of each epoch compute stats on the validation set
         :param verbose: if True print progress and info during training
         :param limit TODO remove it
         :return: statistics of training and if required of evaluation
         """
+
+        if weights_dir is 'dmyhms':
+            weights_dir = datetime.now().strftime("%d_%m_%y_%H_%M_%S")
 
         # Set training mode
         self.model.train()
@@ -288,7 +308,7 @@ class Trainer:
                 stats.update(epoch, 'batch_train_time', time.time() - batch_start_time)
 
             if weights_dir is not None and weights_dir != '':
-                torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.js'))
+                torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
             stats.update(epoch, 'epoch_train_time', time.time() - epoch_start_time)
             if verbose:

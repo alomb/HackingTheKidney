@@ -41,7 +41,7 @@ class BinaryDiceLoss(Module):
 
         # Apply sigmoid if the network outputs are logits
         if self.logits:
-            preds = F.sigmoid(preds)
+            preds = torch.sigmoid(preds)
 
         return torch.mean(1. - (2. * (preds * labels).sum((1, 2)) + SMOOTHING_COEFFICIENT) /
                                 (labels.sum((1, 2)) + preds.sum((1, 2)) + SMOOTHING_COEFFICIENT))
