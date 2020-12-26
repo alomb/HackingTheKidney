@@ -242,16 +242,19 @@ class Trainer:
 
                 # Show images
                 if TrainerVerbosity.IMAGES in verbosity_level:
+                    masks = masks.cpu()
+                    outputs = outputs.cpu()
+                    preds = preds.cpu()
+                    images = images.detach().cpu()
                     for i in range(len(images)):
                         # Denormalize and then transform to PIL image
                         denormalized_images = transforms.ToPILImage()(denormalize_images(images[i],
                                                                                          self.mean,
                                                                                          self.std))
-
                         display_images_and_masks(images=[denormalized_images] * 3,
-                                                 masks=[masks[i].unsqueeze(2),
-                                                        outputs[i].permute(1, 2, 0),
-                                                        preds[i].permute(1, 2, 0)])
+                                                 masks=[masks[i].detach(),
+                                                        outputs[i].detach().squeeze(0),
+                                                        preds[i].detach().squeeze(0)])
 
                 # Update stats
                 stats.update(epoch, 'loss', loss.item())
@@ -377,16 +380,19 @@ class Trainer:
 
                 # Show images
                 if TrainerVerbosity.IMAGES in verbosity_level:
+                    masks = masks.cpu()
+                    outputs = outputs.cpu()
+                    preds = preds.cpu()
+                    images = images.detach().cpu()
                     for i in range(len(images)):
                         # Denormalize and then transform to PIL image
                         denormalized_images = transforms.ToPILImage()(denormalize_images(images[i],
                                                                                          self.mean,
                                                                                          self.std))
-
                         display_images_and_masks(images=[denormalized_images] * 3,
-                                                 masks=[masks[i].unsqueeze(2),
-                                                        outputs[i].detach().permute(1, 2, 0),
-                                                        preds[i].detach().permute(1, 2, 0)])
+                                                 masks=[masks[i].detach(),
+                                                        outputs[i].detach().squeeze(0),
+                                                        preds[i].detach().squeeze(0)])
 
                 # Update stats
                 stats.update(epoch, 'loss', loss.item())

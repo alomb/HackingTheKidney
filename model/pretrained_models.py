@@ -51,7 +51,7 @@ def get_unet(device: str,
              decoder_channels: List[int] = (256, 128, 64, 32, 16),
              freeze_backbone: bool = True,
              depth: int = 5,
-             activation: str = 'sigmoid') -> Tuple[torch.nn.Module, Dict]:
+             activation: str = None) -> Tuple[torch.nn.Module, Dict]:
     """
     Constructs a Unet model with a custom backbone.
     https://arxiv.org/abs/1505.04597
