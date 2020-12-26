@@ -2,7 +2,7 @@ import gc
 import glob
 import os
 import pathlib
-from typing import Tuple, Dict
+from typing import Tuple, Dict, OrderedDict
 
 import rasterio
 from rasterio.windows import Window
@@ -125,7 +125,11 @@ class Test:
                 # image = np.moveaxis(image, 0, -1)
                 with torch.no_grad():
                     image = torch.from_numpy(image).to(torch.float32).unsqueeze(0).to(self.device)
-                    output = self.model(image)['out']
+
+                    output = self.model(image)
+
+                    if type(output) is OrderedDict:
+                        output = output['out']
 
                     preds[x1:x2, y1:y2] = (output > self.threshold).long()
 
