@@ -268,6 +268,7 @@ class Trainer:
 
     def train(self,
               epochs: int,
+              saving_frequency: int = 1,
               weights_dir: str = 'dmyhms',
               evaluate: bool = True,
               verbosity_level: List[TrainerVerbosity] = (),
@@ -280,6 +281,7 @@ class Trainer:
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
         in DD_MM_YY_HH_MM_SS format
+        :param saving_frequency: indicates the epoch rate of weights saving
         :param evaluate: if True at the end of each epoch compute stats on the validation set
         :param verbosity_level: list containing different keys for each type of requested information (training)
         :param evaluation_verbosity_level: list containing different keys for each type of requested information
@@ -393,7 +395,7 @@ class Trainer:
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
                 stats.update(epoch, 'batch_time', time.time() - batch_start_time)
 
-            if weights_dir is not None and weights_dir != '':
+            if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
