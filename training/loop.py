@@ -34,6 +34,9 @@ class TrainerVerbosity(enum.Enum):
     TENSORS = 3
     # Show involved images
     IMAGES = 4
+    # Frequency for tensors and images during training and evaluation
+    TENSORS_TRAIN_FREQ = 53
+    TENSORS_EVAL_FREQ = 30
 
 
 class Statistics:
@@ -207,13 +210,13 @@ class Trainer:
                 data_stream = iter(self.validation_data_loader)
 
             # TODO remove this
-            l = limit
+            l = 0
             for images, masks in data_stream:
 
                 # TODO remove this
-                if l == 0:
+                if l == limit:
                     break
-                l -= 1
+                l += 1
 
                 batch_start_time = time.time()
 
@@ -231,7 +234,7 @@ class Trainer:
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
-                if TrainerVerbosity.TENSORS in verbosity_level:
+                if TrainerVerbosity.TENSORS in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
                     print(f'Image ({images.shape}):\n{images}\n')
                     print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
                     print(f'Masks ({masks.shape}):\n{masks}\n')
@@ -241,7 +244,7 @@ class Trainer:
                     print(f'Loss:\n{loss}\n')
 
                 # Show images
-                if TrainerVerbosity.IMAGES in verbosity_level:
+                if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
                     masks = masks.cpu()
                     outputs = outputs.cpu()
                     preds = preds.cpu()
@@ -338,13 +341,13 @@ class Trainer:
                 data_stream = iter(self.training_data_loader)
 
             # TODO remove this
-            l = limit
+            l = 0
             for images, masks in data_stream:
 
                 # TODO remove this
-                if l == 0:
+                if l == limit:
                     break
-                l -= 1
+                l += 1
 
                 batch_start_time = time.time()
 
@@ -369,7 +372,7 @@ class Trainer:
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
-                if TrainerVerbosity.TENSORS in verbosity_level:
+                if TrainerVerbosity.TENSORS in verbosity_level and l % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
                     print(f'Image ({images.shape}):\n{images}\n')
                     print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
                     print(f'Masks ({masks.shape}):\n{masks}\n')
@@ -379,7 +382,7 @@ class Trainer:
                     print(f'Loss:\n{loss}\n')
 
                 # Show images
-                if TrainerVerbosity.IMAGES in verbosity_level:
+                if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
                     masks = masks.cpu()
                     outputs = outputs.cpu()
                     preds = preds.cpu()
