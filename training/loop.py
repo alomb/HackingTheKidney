@@ -168,20 +168,23 @@ class Trainer:
     def print_stats(self,
                     stats: Statistics,
                     epoch: int,
-                    print_epoch_time: bool):
+                    print_epoch_time: bool,
+                    print_loss: bool):
         """
         Print current epoch statistics
 
         :param stats: statistics
         :param epoch: current epoch
-        :param print_epoch_time: if True prints the epoch/evaluation duration.
+        :param print_epoch_time: if True prints the epoch/evaluation duration
+        :param print_loss: if True prints the epoch average loss
         """
 
         # Time is already indicated by tqdm
         if print_epoch_time:
             print(f"Epoch/Evaluation ended in {round(stats.stats[epoch]['epoch_time'][-1])} seconds")
         print('Average batch time \t', round(np.mean(stats.stats[epoch]['batch_time'])), 'seconds')
-        print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']), 4))
+        if print_loss:
+            print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']), 4))
         print('Metrics:')
         print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
@@ -229,8 +232,6 @@ class Trainer:
                 if type(outputs) is OrderedDict:
                     outputs = outputs['out']
 
-                loss = self.criterion(outputs, masks)
-
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
@@ -241,7 +242,6 @@ class Trainer:
                     print(f'Outputs ({outputs.shape}):\n{outputs}\n')
                     print(f'Max and min value: {outputs.max().item()}, {outputs.min().item()}\n')
                     print(f'Predictions ({preds.shape}):\n{preds}\n')
-                    print(f'Loss:\n{loss}\n')
 
                 # Show images
                 if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
@@ -260,7 +260,6 @@ class Trainer:
                                                         preds[i].detach().squeeze(0)])
 
                 # Update stats
-                stats.update(epoch, 'loss', loss.item())
                 stats.update(epoch, 'iou', iou(preds, masks).mean().item())
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
@@ -269,7 +268,7 @@ class Trainer:
         stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
         # Print stats
         if TrainerVerbosity.STATISTICS in verbosity_level:
-            self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level)
+            self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level, False)
             print(f"{'-' * 100}")
 
     def train(self,
@@ -410,7 +409,7 @@ class Trainer:
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
             # Print stats
             if TrainerVerbosity.STATISTICS in verbosity_level:
-                self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level)
+                self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level, True)
 
             if evaluate:
                 if TrainerVerbosity.PROGRESS in verbosity_level:
