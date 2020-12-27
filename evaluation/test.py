@@ -131,7 +131,7 @@ class Test:
                     if type(output) is OrderedDict:
                         output = output['out']
 
-                    preds[x1:x2, y1:y2] = (output > self.threshold).long()
+                    preds[x1:x2, y1:y2] = (output > self.threshold).long().cpu()
 
             submission_dict[i] = {'id': filename.stem, 'predicted': rle_encode_less_memory(preds)}
             # Free some memory
