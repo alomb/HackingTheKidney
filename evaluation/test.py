@@ -1,19 +1,24 @@
 import gc
 import glob
+import math
 import os
 import pathlib
-from typing import Tuple, Dict, OrderedDict
+from typing import Tuple, Dict, OrderedDict, List
 
+import cv2
 import rasterio
 from rasterio.windows import Window
 import numpy as np
 import pandas as pd
+import torchvision.transforms as T
 from tqdm import tqdm
 
 import torch
 from torch.nn import Module
 
+from preprocessing.dataset import denormalize_images
 from utils import rle_encode_less_memory
+from visualization.visualize_data import display_images_and_masks
 
 
 def make_grid(shape: Tuple[int, int],
@@ -71,6 +76,7 @@ class Test:
                  threshold: float,
                  testing_directory_path: str,
                  window: int,
+                 resize_factor: float,
                  min_overlap: int,
                  device: str):
         """
@@ -78,6 +84,7 @@ class Test:
         :param threshold: minimum value used to threshold model outputs: predicted mask = output > threshold
         :param testing_directory_path: path containing testing images
         :param window: window size to split the images
+        :param resize_factor: resizing factor applied to the splits to downsample their size
         :param min_overlap: minimum overlap between the splits
         :param device: used device
         """
@@ -86,15 +93,26 @@ class Test:
         self.threshold = threshold
         self.testing_directory_path = pathlib.Path(testing_directory_path)
         self.window = window
+        self.resize_factor = resize_factor
         self.min_overlap = min_overlap
         self.device = device
 
-    def test(self, output_csv_file: str, verbose: bool = False) -> Dict:
+    def test(self,
+             output_csv_file: str,
+             mean: List[float],
+             std: List[float],
+             model_output_logits: bool = True,
+             verbose: bool = False,
+             min_num_of_1_to_show_images: int = math.inf) -> Dict:
         """
         Evaluate the model on the images in the given directory.
 
         :param output_csv_file: path to the file where the encoded masks are saved (.csv format)
+        :param mean: mean for each channel (RGB)
+        :param std: standard deviation of each channel (RGB)
+        :param model_output_logits: if true the model outputs logits which must be transformed into a probability
         :param verbose: if True prints details
+        :param min_num_of_1_to_show_images: minimum number of 1 in the mask to decide whether to show it or not
         :return: dictionary containing for each image its rle encoded mask
         """
 
@@ -102,40 +120,70 @@ class Test:
         images_iterator = glob.glob1(self.testing_directory_path, "*.tiff")
         submission_dict = dict()
 
+        transformation = T.Compose([T.ToPILImage(),
+                                    T.Resize(int(self.window * self.resize_factor)),
+                                    T.ToTensor(),
+                                    T.Normalize(mean, std)])
+
         for i, filename in enumerate(images_iterator):
             if verbose:
                 print(f'Evaluating image {filename} ({i}/{len(images_iterator)})')
 
-            whole_image = rasterio.open(os.path.join(self.testing_directory_path, filename))
+            total_image = rasterio.open(os.path.join(self.testing_directory_path, filename))
 
             # Generate slices
-            slices = make_grid(whole_image.shape,
-                                      self.window,
-                                      self.min_overlap)
+            slices = make_grid(total_image.shape,
+                               self.window,
+                               self.min_overlap)
 
             # Total predicted mask with the size equal to the whole image
-            preds = np.zeros(whole_image.shape, dtype=np.uint8)
+            total_pred_mask = np.zeros(total_image.shape, dtype=np.uint8)
 
             for (x1, x2, y1, y2) in tqdm(slices):
                 # Read image slice
-                image = whole_image.read([1, 2, 3],
+                image = total_image.read([1, 2, 3],
                                          window=Window.from_slices((x1, x2), (y1, y2)))
 
-                # Move channels at the first dimension
-                # image = np.moveaxis(image, 0, -1)
-                with torch.no_grad():
-                    image = torch.from_numpy(image).to(torch.float32).unsqueeze(0).to(self.device)
+                # Move channels at the last dimension
+                image = np.moveaxis(image, 0, -1)
 
+                # Apply transformations (size rescaling, 0-1 rescaling, normalization)
+                image = transformation(image).unsqueeze(0).to(self.device)
+
+                with torch.no_grad():
+                    # Feed the model
                     output = self.model(image)
 
+                    # Support torchvision.models
                     if type(output) is OrderedDict:
                         output = output['out']
 
-                    preds[x1:x2, y1:y2] = (output > self.threshold).long().cpu()
+                    # Convert logits
+                    if model_output_logits:
+                        output.sigmoid_()
 
-            submission_dict[i] = {'id': filename.stem, 'predicted': rle_encode_less_memory(preds)}
+                    # Move to NumPy and rescale it according to the resize factor
+                    pred = output.squeeze().cpu().numpy()
+                    final_pred = (cv2.resize(pred, (self.window, self.window)) > self.threshold).astype(np.uint8)
+
+                    # Threshold and obtain final predictions
+                    total_pred_mask[x1:x2, y1:y2] = final_pred
+
+                    # Show images to debug
+                    if final_pred.sum() > min_num_of_1_to_show_images:
+                        image = image.detach().cpu()
+
+                        denormalized_image = T.ToPILImage()(denormalize_images(image.squeeze(), mean, std))
+
+                        display_images_and_masks(images=[denormalized_image] * 3,
+                                                 masks=[pred,
+                                                        (pred > self.threshold).astype(np.uint8)])
+
+            submission_dict[i] = {'id': filename.replace('.tiff', ''),
+                                  'predicted': rle_encode_less_memory(total_pred_mask)}
+            print(submission_dict)
             # Free some memory
-            del preds
+            del total_pred_mask
             gc.collect()
 
         submission = pd.DataFrame.from_dict(submission_dict, orient='index')
