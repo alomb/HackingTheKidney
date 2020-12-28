@@ -6,7 +6,7 @@ import time
 import pickle
 from datetime import datetime
 from collections import OrderedDict
-from typing import Union, Optional, List, Dict, Tuple
+from typing import Union, Optional, List, Dict, Tuple, Callable
 
 import numpy as np
 import pandas as pd
@@ -120,6 +120,89 @@ class Statistics:
                                       orient='index').to_string()
 
 
+class SchedulerWrapper:
+    """
+    Wrap a PyTorch scheduler providing utilities to reset its state, e.g. to be performed at the end of an epoch.
+    """
+
+    def __init__(self,
+                 scheduler: object,
+                 reset_strategy: Optional[Callable[[int], bool]]):
+        """
+        :param scheduler: a learning rate scheduler
+        :param reset_strategy: a Callable that return True when reset must be performed based on the passed epoch
+        """
+
+        self.scheduler = scheduler
+        self.reset_strategy = reset_strategy
+
+        # Save scheduler and optimizer's initial state to recover later if necessary
+        self.scheduler_state_dict = scheduler.state_dict()
+        self.optimizer_state_dict = self.scheduler.optimizer.state_dict()
+
+    def step(self):
+        """
+        The classical scheduler's step
+        """
+
+        self.scheduler.step()
+
+    def reset(self, epoch):
+        """
+        Reset the scheduler and related optimizer to its initial state
+        :param epoch: current epoch
+        """
+
+        if self.reset_strategy and self.reset_strategy(epoch):
+            self.scheduler.load_state_dict(self.scheduler_state_dict)
+            self.scheduler.optimizer.load_state_dict(self.optimizer_state_dict)
+
+
+class EarlyStopping:
+    """
+    Class responsible for performing early stopping based on the observation of no improvement for more than a certain
+    number of epochs.
+    """
+
+    def __init__(self,
+                 num_epochs_to_stop: int,
+                 delta: float = 1e-5):
+        """
+        :param num_epochs_to_stop: maximum number of epochs to stop when validation loss is not improving
+        :param delta: minimum difference between best validation loss and the current one to consider the new an
+        improvement
+        """
+
+        self.num_epochs_to_stop = num_epochs_to_stop
+        self.delta = delta
+        self.min_validation_loss = None
+        self.epochs_no_improve = 0
+
+    def step(self, val_loss: float) -> bool:
+        """
+        Check whether the training should stop or not and update internal records.
+
+        :param val_loss: current epoch validation loss (usually an average of an epoch)
+        :return: True if the training should be stopped
+        """
+
+        if self.min_validation_loss is None:
+            self.min_validation_loss = val_loss
+            return False
+
+        # Update current best validation loss and reset counter
+        if val_loss + self.delta < self.min_validation_loss:
+            self.epochs_no_improve = 0
+            self.min_validation_loss = val_loss
+        # Update counter and check whether maximum number of epochs of no improvement has been reached
+        else:
+            self.epochs_no_improve += 1
+            if self.epochs_no_improve >= self.num_epochs_to_stop:
+                return True
+
+        return False
+
+
 class Trainer:
     """
     Class used to instantiate and run a test.
@@ -168,23 +251,20 @@ class Trainer:
     def print_stats(self,
                     stats: Statistics,
                     epoch: int,
-                    print_epoch_time: bool,
-                    print_loss: bool):
+                    print_epoch_time: bool):
         """
         Print current epoch statistics
 
         :param stats: statistics
         :param epoch: current epoch
         :param print_epoch_time: if True prints the epoch/evaluation duration
-        :param print_loss: if True prints the epoch average loss
         """
 
         # Time is already indicated by tqdm
         if print_epoch_time:
-            print(f"Epoch/Evaluation ended in {round(stats.stats[epoch]['epoch_time'][-1])} seconds")
+            print('Epoch/Evaluation ended in', round(stats.stats[epoch]['epoch_time'][-1]), 'seconds')
         print('Average batch time \t', round(np.mean(stats.stats[epoch]['batch_time'])), 'seconds')
-        if print_loss:
-            print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']), 4))
+        print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']), 4))
         print('Metrics:')
         print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
@@ -232,6 +312,8 @@ class Trainer:
                 if type(outputs) is OrderedDict:
                     outputs = outputs['out']
 
+                loss = self.criterion(outputs, masks)
+
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
@@ -242,6 +324,7 @@ class Trainer:
                     print(f'Outputs ({outputs.shape}):\n{outputs}\n')
                     print(f'Max and min value: {outputs.max().item()}, {outputs.min().item()}\n')
                     print(f'Predictions ({preds.shape}):\n{preds}\n')
+                    print(f'Loss:\n{loss}\n')
 
                 # Show images
                 if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
@@ -260,6 +343,7 @@ class Trainer:
                                                         preds[i].detach().squeeze(0)])
 
                 # Update stats
+                stats.update(epoch, 'loss', loss.item())
                 stats.update(epoch, 'iou', iou(preds, masks).mean().item())
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
@@ -268,14 +352,16 @@ class Trainer:
         stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
         # Print stats
         if TrainerVerbosity.STATISTICS in verbosity_level:
-            self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level, False)
+            self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level)
             print(f"{'-' * 100}")
 
     def train(self,
               epochs: int,
               saving_frequency: int = 1,
+              scheduler: Optional[SchedulerWrapper] = None,
               weights_dir: str = 'dmyhms',
               evaluate: bool = True,
+              early_stopping: Optional[EarlyStopping] = None,
               verbosity_level: List[TrainerVerbosity] = (),
               evaluation_verbosity_level: List[TrainerVerbosity] = (),
               limit: int = math.inf,
@@ -287,7 +373,9 @@ class Trainer:
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
         in DD_MM_YY_HH_MM_SS format
         :param saving_frequency: indicates the epoch rate of weights saving
+        :param scheduler: a learning rate scheduler
         :param evaluate: if True at the end of each epoch compute stats on the validation set
+        :param early_stopping: early stopping policy and tracker
         :param verbosity_level: list containing different keys for each type of requested information (training)
         :param evaluation_verbosity_level: list containing different keys for each type of requested information
         :param limit: the number of batches to debug TODO remove this
@@ -296,7 +384,7 @@ class Trainer:
         """
 
         if weights_dir is 'dmyhms':
-            weights_dir = datetime.now().strftime("%d_%m_%y_%H_%M_%S")
+            weights_dir = datetime.now().strftime('%d_%m_%y_%H_%M_%S')
 
         # Set training mode
         self.model.train()
@@ -316,7 +404,10 @@ class Trainer:
         # Check if the validation dataset has been defined
         if evaluate and self.validation_data_loader is None:
             evaluate = False
-            warnings.warn("evaluate is True but no validation dataset has been passed! Evaluation will be skipped.")
+            warnings.warn('evaluate is True but no validation dataset has been passed! Evaluation will be skipped.')
+
+        if not evaluate and early_stopping is not None:
+            raise Exception('Cannot perform early stopping without validation phase!')
 
         eval_stats = None
         if evaluate:
@@ -334,7 +425,7 @@ class Trainer:
             epoch_start_time = time.time()
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
-                print(f"Training epoch {epoch}/{epochs}:")
+                print(f'Training epoch {epoch}/{epochs}:')
                 data_stream = tqdm(iter(self.training_data_loader))
             else:
                 data_stream = iter(self.training_data_loader)
@@ -367,6 +458,10 @@ class Trainer:
                 # Backward and optimize
                 loss.backward()
                 self.optimizer.step()
+
+                # If the scheduler is defined update it
+                if scheduler:
+                    scheduler.step()
 
                 preds = (outputs > self.threshold).long()
 
@@ -406,15 +501,25 @@ class Trainer:
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
+            # Apply scheduler resetting
+            scheduler.reset(epoch)
+
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
+
             # Print stats
             if TrainerVerbosity.STATISTICS in verbosity_level:
-                self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level, True)
+                self.print_stats(stats, epoch, TrainerVerbosity.PROGRESS not in verbosity_level)
 
             if evaluate:
                 if TrainerVerbosity.PROGRESS in verbosity_level:
                     print(f"{'-' * 100}\nValidation phase:")
                 self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
+
+            if early_stopping:
+                if early_stopping.step(eval_stats.get_averaged_stat('loss')[-1]):
+                    if TrainerVerbosity.PROGRESS in verbosity_level:
+                        print('Early Stopping!')
+                    return stats, eval_stats
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f"{'=' * 100}")
