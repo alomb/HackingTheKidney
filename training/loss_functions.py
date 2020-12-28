@@ -90,11 +90,11 @@ class BinaryFocalLoss(Module):
 
         if self.logits:
             logpt = F.binary_cross_entropy_with_logits(preds,
-                                                       labels,
+                                                       labels.type_as(preds),
                                                        reduction='none')
         else:
             logpt = F.binary_cross_entropy(preds,
-                                           labels,
+                                           labels.type_as(preds),
                                            reduction='none')
 
         pt = torch.clamp(-logpt.exp(), min=-100)

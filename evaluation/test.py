@@ -102,6 +102,7 @@ class Test:
              mean: List[float],
              std: List[float],
              model_output_logits: bool = True,
+             morphological_postprocessing: bool = True,
              verbose: bool = False,
              min_num_of_1_to_show_images: int = math.inf) -> Dict:
         """
@@ -139,7 +140,12 @@ class Test:
             # Total predicted mask with the size equal to the whole image
             total_pred_mask = np.zeros(total_image.shape, dtype=np.uint8)
 
-            for (x1, x2, y1, y2) in tqdm(slices):
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+
+            if verbose:
+                slices = tqdm(slices)
+
+            for (x1, x2, y1, y2) in slices:
                 # Read image slice
                 image = total_image.read([1, 2, 3],
                                          window=Window.from_slices((x1, x2), (y1, y2)))
@@ -166,18 +172,22 @@ class Test:
                     pred = output.squeeze().cpu().numpy()
                     final_pred = (cv2.resize(pred, (self.window, self.window)) > self.threshold).astype(np.uint8)
 
+                    # Apply morphological transformations
+                    if morphological_postprocessing:
+                        final_pred = cv2.morphologyEx(final_pred, cv2.MORPH_CLOSE, kernel)
+                        final_pred = cv2.morphologyEx(final_pred, cv2.MORPH_OPEN, kernel)
+
                     # Threshold and obtain final predictions
                     total_pred_mask[x1:x2, y1:y2] = final_pred
 
-                    # Show images to debug
-                    if final_pred.sum() > min_num_of_1_to_show_images:
+                    if final_pred.sum() >= min_num_of_1_to_show_images:
                         image = image.detach().cpu()
 
                         denormalized_image = T.ToPILImage()(denormalize_images(image.squeeze(), mean, std))
 
                         display_images_and_masks(images=[denormalized_image] * 3,
                                                  masks=[pred,
-                                                        (pred > self.threshold).astype(np.uint8)])
+                                                        cv2.resize(final_pred, (256, 256))])
 
             submission_dict[i] = {'id': filename.replace('.tiff', ''),
                                   'predicted': rle_encode_less_memory(total_pred_mask)}
