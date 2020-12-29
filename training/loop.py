@@ -507,7 +507,10 @@ class Trainer:
                 stats.update(epoch, 'lr', self.optimizer.param_groups[0]['lr'])
 
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
-                torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
+                saving_path = os.path.join(weights_dir, f'weights_{epoch}.pt')
+                if TrainerVerbosity.PROGRESS in verbosity_level:
+                    print('Saved model at', saving_path)
+                torch.save(self.model.state_dict(), saving_path)
 
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
 
@@ -531,6 +534,11 @@ class Trainer:
                 if early_stopping.step(eval_stats.get_averaged_stat('loss')[epoch - 1]):
                     if TrainerVerbosity.PROGRESS in verbosity_level:
                         print('Early Stopping!')
+
+                    # Save
+                    if weights_dir is not None and weights_dir != '':
+                        torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
+
                     return stats, eval_stats
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
