@@ -10,6 +10,7 @@ from typing import Union, Optional, List, Dict, Tuple, Callable
 
 import numpy as np
 import pandas as pd
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torchvision.transforms import transforms
 from tqdm import tqdm
 
@@ -140,12 +141,14 @@ class SchedulerWrapper:
         self.scheduler_state_dict = scheduler.state_dict()
         self.optimizer_state_dict = self.scheduler.optimizer.state_dict()
 
-    def step(self):
+    def step(self, params: Dict = None):
         """
         The classical scheduler's step
         """
 
-        self.scheduler.step()
+        if params is None:
+            params = {}
+        self.scheduler.step(**params)
 
     def reset(self, epoch):
         """
@@ -430,14 +433,13 @@ class Trainer:
             else:
                 data_stream = iter(self.training_data_loader)
 
-            # TODO remove this
-            l = 0
+            i = 0
             for images, masks in data_stream:
 
                 # TODO remove this
-                if l == limit:
+                if i == limit:
                     break
-                l += 1
+                i += 1
 
                 batch_start_time = time.time()
 
@@ -461,12 +463,15 @@ class Trainer:
 
                 # If the scheduler is defined update it
                 if scheduler:
-                    scheduler.step()
+                    if type(scheduler.scheduler) is CosineAnnealingWarmRestarts:
+                        scheduler.step({'epoch': epoch + i / len(self.training_data_loader)})
+                    elif type(scheduler.scheduler) is not ReduceLROnPlateau:
+                        scheduler.step()
 
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
-                if TrainerVerbosity.TENSORS in verbosity_level and l % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
+                if TrainerVerbosity.TENSORS in verbosity_level and i % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
                     print(f'Image ({images.shape}):\n{images}\n')
                     print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
                     print(f'Masks ({masks.shape}):\n{masks}\n')
@@ -476,7 +481,7 @@ class Trainer:
                     print(f'Loss:\n{loss}\n')
 
                 # Show images
-                if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
+                if TrainerVerbosity.IMAGES in verbosity_level and i % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
                     masks = masks.cpu()
                     outputs = outputs.cpu()
                     preds = preds.cpu()
@@ -501,9 +506,6 @@ class Trainer:
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
-            # Apply scheduler resetting
-            scheduler.reset(epoch)
-
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
 
             # Print stats
@@ -514,6 +516,13 @@ class Trainer:
                 if TrainerVerbosity.PROGRESS in verbosity_level:
                     print(f"{'-' * 100}\nValidation phase:")
                 self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
+
+            if scheduler:
+                if type(scheduler.scheduler) is ReduceLROnPlateau:
+                    scheduler.step({'metrics': eval_stats.get_averaged_stat('loss')[-1]})
+
+                # Apply scheduler resetting
+                scheduler.reset(epoch)
 
             if early_stopping:
                 if early_stopping.step(eval_stats.get_averaged_stat('loss')[-1]):
