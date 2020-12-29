@@ -402,7 +402,7 @@ class Trainer:
 
         # Initialize statistics
         stats = Statistics(epochs,
-                           stats_keys,
+                           stats_keys + ['lr'],
                            accumulate=True)
 
         # Check if the validation dataset has been defined
@@ -430,6 +430,7 @@ class Trainer:
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f'Training epoch {epoch}/{epochs}:')
+                print(f'(Learning rate is {self.optimizer.param_groups[0]["lr"]})')
                 data_stream = tqdm(iter(self.training_data_loader))
             else:
                 data_stream = iter(self.training_data_loader)
@@ -503,6 +504,7 @@ class Trainer:
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
                 stats.update(epoch, 'batch_time', time.time() - batch_start_time)
+                stats.update(epoch, 'lr', self.optimizer.param_groups[0]['lr'])
 
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
