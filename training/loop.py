@@ -42,7 +42,8 @@ class TrainerVerbosity(enum.Enum):
 
 class Statistics:
     """
-    Class used to register and keep track of the training and evaluating statistics.
+    Class used to register and keep track of the training and evaluating statistics. It creates a dictionary mapping
+    each epoch and each stat with a list of values or an accumulated value.
     """
 
     def __init__(self,
@@ -84,7 +85,7 @@ class Statistics:
 
     def get_all_averages(self) -> Dict:
         """
-        :return: averaged statistics at each epoch
+        :return: averaged statistics at each epoch (including those not already computed)
         """
 
         if self.accumulate:
@@ -95,7 +96,7 @@ class Statistics:
     def get_averaged_stat(self, stat: str) -> List:
         """
         :param stat: the selected state
-        :return: the state stats averaged at each epoch
+        :return: the state stats averaged at each epoch (including those not already computed)
         """
 
         if self.accumulate:
@@ -327,7 +328,7 @@ class Trainer:
                     print(f'Outputs ({outputs.shape}):\n{outputs}\n')
                     print(f'Max and min value: {outputs.max().item()}, {outputs.min().item()}\n')
                     print(f'Predictions ({preds.shape}):\n{preds}\n')
-                    print(f'Loss:\n{loss}\n')
+                    print(f'Loss:\n{loss.item()}\n')
 
                 # Show images
                 if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
@@ -478,7 +479,7 @@ class Trainer:
                     print(f'Outputs ({outputs.shape}):\n{outputs}\n')
                     print(f'Max and min value: {outputs.max().item()}, {outputs.min().item()}\n')
                     print(f'Predictions ({preds.shape}):\n{preds}\n')
-                    print(f'Loss:\n{loss}\n')
+                    print(f'Loss:\n{loss.item()}\n')
 
                 # Show images
                 if TrainerVerbosity.IMAGES in verbosity_level and i % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
@@ -519,13 +520,13 @@ class Trainer:
 
             if scheduler:
                 if type(scheduler.scheduler) is ReduceLROnPlateau:
-                    scheduler.step({'metrics': eval_stats.get_averaged_stat('loss')[-1]})
+                    scheduler.step({'metrics': eval_stats.get_averaged_stat('loss')[epoch - 1]})
 
                 # Apply scheduler resetting
                 scheduler.reset(epoch)
 
             if early_stopping:
-                if early_stopping.step(eval_stats.get_averaged_stat('loss')[-1]):
+                if early_stopping.step(eval_stats.get_averaged_stat('loss')[epoch - 1]):
                     if TrainerVerbosity.PROGRESS in verbosity_level:
                         print('Early Stopping!')
                     return stats, eval_stats
