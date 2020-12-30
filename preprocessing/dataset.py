@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Optional
 
 import albumentations
 from PIL import Image
@@ -41,16 +41,16 @@ def get_training_validation_sets(images_path: str,
     training_set = HuBMAPDataset(list(training_images),
                                  images_path,
                                  masks_path,
-                                 dataset_augmentations['train'],
                                  mean,
-                                 std)
+                                 std,
+                                 augmentations=dataset_augmentations['train'])
 
     validation_set = HuBMAPDataset(list(validation_images),
                                    images_path,
                                    masks_path,
-                                   dataset_augmentations['val'],
                                    mean,
-                                   std)
+                                   std,
+                                   augmentations=dataset_augmentations['val'])
 
     return training_set, training_images, validation_set, validation_images
 
@@ -82,16 +82,16 @@ class HuBMAPDataset(Dataset):
                  images: List[str],
                  images_path: str,
                  masks_path: str,
-                 augmentations: albumentations.Compose,
                  mean: List[float],
-                 std: List[float]):
+                 std: List[float],
+                 augmentations: Optional[albumentations.Compose] = None):
         """
         :param images: list of sample names
         :param images_path: path of the folder containing all the images
         :param masks_path: path of the folder containing all the masks
-        :param augmentations: image augmentations operations
         :param mean: mean for each channel (RGB)
         :param std: standard deviation of each channel (RGB)
+        :param augmentations: image augmentations operations
         """
 
         self.images = images
