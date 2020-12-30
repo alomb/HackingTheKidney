@@ -1,3 +1,7 @@
+from typing import Dict, Union, List
+
+import numpy as np
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -173,3 +177,39 @@ class BinaryLovaszLoss(Module):
         grad = self.lovasz_grad(gt_sorted)
         # ReLU is used because only a positive part of the error vector contains prediction errors
         return torch.dot(F.relu(errors_sorted), grad)
+
+
+class CombinationLoss(Module):
+    """
+    Weighted averages of multiple losses.
+    """
+
+    def __init__(self, loss_functions_weights: List[Dict[str, Union[float, Module]]]):
+        """
+
+        :param loss_functions_weights: dictionary containing loss functions and their weights
+        For example [{'name': LossFunction1, 'weight': 0.3}, {'name': LossFunction2, 'weight': 0.7}]
+        """
+        super(CombinationLoss, self).__init__()
+        if np.sum(list(map(lambda x: x['weight'], loss_functions_weights))) != 1:
+            raise ValueError('Weights sum is not 1!')
+        self.loss_functions_weights = loss_functions_weights
+
+    def forward(self,
+                preds: Tensor,
+                labels: Tensor) -> Tensor:
+        """
+        :param preds: predicted binary masks as logits from the neural network
+        :param labels: ground truth binary masks
+        :return: the averaged sum of the given loss functions
+        """
+        final_loss = None
+
+        for loss_params in self.loss_functions_weights:
+            new_loss = loss_params['name'](preds, labels) * loss_params['weight']
+            if final_loss is not None:
+                final_loss += new_loss
+            else:
+                final_loss = new_loss
+
+        return final_loss
