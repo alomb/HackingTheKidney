@@ -279,12 +279,12 @@ class Trainer:
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
         # Plot to tensorboard
-        self.writer.add_scalar('Hyperparameters/Learning Rate', stats.stats['lr'], epoch)
-        self.writer.add_scalars('Losses', {"Loss": stats.stats['loss'][epoch - 1]}, epoch)
+        self.writer.add_scalar('Hyperparameters/Learning Rate', stats.stats[epoch]['lr'], epoch)
+        self.writer.add_scalars('Losses', {"Loss": stats.stats[epoch]['loss']}, epoch)
         self.writer.add_scalars('Metrics', {
-            "IoU": stats.stats['iou'][epoch - 1],
-            "Dice Coefficient": stats.stats['dice_coefficient'][epoch - 1],
-            "Pixel Accuracy": stats.stats['pixel_accuracy'][epoch - 1]
+            "IoU": stats.stats[epoch]['iou'],
+            "Dice Coefficient": stats.stats[epoch]['dice_coefficient'],
+            "Pixel Accuracy": stats.stats[epoch]['pixel_accuracy']
         }, epoch)
 
         self.writer.flush()

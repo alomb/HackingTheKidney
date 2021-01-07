@@ -56,19 +56,19 @@ def get_unet(device: str,
                      activation=activation).to(device)
 
     for layer in model.encoder.modules():
-        set_requires_grad_for_layer(layer, freeze_backbone)
+        set_requires_grad_for_layer(layer, not freeze_backbone)
 
     return model, smp.encoders.get_preprocessing_params(encoder)
 
 
 def get_deeplabv3(
+    device: str,
     encoder_weights: str = 'imagenet',
     encoder: str = 'resnet34',
     decoder_channels: int = 256,
     freeze_backbone: bool = True,
     depth: int = 5,
-    activation: str = None,
-    device: str = None
+    activation: str = None
 ) -> Tuple[torch.nn.Module, Dict]:
     """
     Constructs a DeepLabV3 model with a custom backbone.
@@ -100,12 +100,9 @@ def get_deeplabv3(
                           upsampling=8,
                           in_channels=3,
                           classes=1,
-                          activation=activation)
-
-    if device is not None:
-        model = model.to(device)
+                          activation=activation).to(device)
 
     for layer in model.encoder.modules():
-        set_requires_grad_for_layer(layer, freeze_backbone)
+        set_requires_grad_for_layer(layer, not freeze_backbone)
 
     return model, smp.encoders.get_preprocessing_params(encoder)
