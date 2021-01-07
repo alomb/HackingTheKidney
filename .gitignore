@@ -13,4 +13,4 @@ logs/
 .idea/
 
 # Autoalbument outputs
-preprocessing/autoalbument_search_hubmap/outputs/
+preprocess/autoalbument_search_hubmap/outputs/

@@ -18,7 +18,7 @@ from tqdm import tqdm
 import torch
 from torch.nn import Module
 
-from preprocessing.dataset import denormalize_images
+from preprocess.dataset import denormalize_images
 from utils import rle_encode_less_memory
 from visualization.visualize_data import display_images_and_masks
 

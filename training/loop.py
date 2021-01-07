@@ -19,7 +19,7 @@ from torch.nn import Module
 from torch.utils.data import DataLoader
 
 from evaluation.metrics import iou, pixel_accuracy, dice_coefficient
-from preprocessing.dataset import HuBMAPDataset, denormalize_images
+from preprocess.dataset import HuBMAPDataset, denormalize_images
 from visualization.visualize_data import display_images_and_masks
 
 
