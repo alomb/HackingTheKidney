@@ -2,6 +2,7 @@ import enum
 import math
 import warnings
 import os
+import sys
 import time
 import pickle
 from datetime import datetime
@@ -12,6 +13,7 @@ import numpy as np
 import pandas as pd
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torchvision.transforms import transforms
+from functools import partial
 from tqdm import tqdm
 
 import torch
@@ -22,6 +24,10 @@ from torch.utils.tensorboard import SummaryWriter
 from evaluation.metrics import iou, pixel_accuracy, dice_coefficient
 from preprocess.dataset import HuBMAPDataset, denormalize_images
 from visualization.visualize_data import display_images_and_masks
+
+
+# Change the tqdm function to avoid new lines and formatting errors
+tqdm = partial(tqdm, position=0, leave=True, file=sys.stdout)
 
 
 class TrainerVerbosity(enum.Enum):
