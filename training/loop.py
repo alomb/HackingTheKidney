@@ -73,7 +73,7 @@ class Statistics:
             self.stats = {epoch: {s: (None, None) for s in metrics}
                           for epoch in range(1, epochs + 1)}
 
-    def update(self, epoch: int, stat: str, value: Tuple[int, float]) -> None:
+    def update(self, epoch: int, stat: str, value: Union[float, Tuple[int, float]]) -> None:
         """
         :param epoch: current epoch
         :param stat: the stat to update
@@ -120,10 +120,7 @@ class Statistics:
         :param metric:
         :return:
         """
-        if metric == 'loss':
-            return np.sum(self.stats[epoch][metric])
-        else:
-            return np.mean(self.stats[epoch][metric])
+        return np.mean(self.stats[epoch][metric])
 
     def save(self, path: str) -> None:
         """
@@ -245,8 +242,8 @@ class Trainer:
                  validation_dataset: Optional[HuBMAPDataset] = None,
                  writer: torch.utils.tensorboard.writer.SummaryWriter = None):
         """
-        :param model: models to train
-        :param threshold: minimum value used to threshold models outputs: predicted mask = output > threshold
+        :param model: model to train
+        :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
         :param criterion: loss function
         :param optimizer: optimizer used during training
         :param batch_size: size of batches used to create a DataLoader
@@ -316,7 +313,7 @@ class Trainer:
                  verbosity_level: List[TrainerVerbosity] = (),
                  limit: int = math.inf) -> None:
         """
-        Method used to evaluate the models
+        Method used to evaluate the model
 
         :param epoch: current epoch
         :param stats: statistics tracker
@@ -408,7 +405,7 @@ class Trainer:
               training_limit: int = math.inf,
               evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
-        Train the models
+        Train the model
 
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
@@ -419,7 +416,7 @@ class Trainer:
         :param early_stopping: early stopping policy and tracker
         :param verbosity_level: list containing different keys for each type of requested information (training)
         :param evaluation_verbosity_level: list containing different keys for each type of requested information
-        :param limit: the number of batches to debug TODO remove this
+        :param training_limit: the number of batches to debug TODO remove this
         :param evaluation_limit: the number of batches to debug in evaluation TODO remove this
         :return: statistics of training and if required of evaluation
         """
@@ -546,7 +543,7 @@ class Trainer:
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 saving_path = os.path.join(weights_dir, f'weights_{epoch}.pt')
                 if TrainerVerbosity.PROGRESS in verbosity_level:
-                    print('Saved models at', saving_path)
+                    print('\nSaved model at', saving_path)
                 torch.save(self.model.state_dict(), saving_path)
 
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
