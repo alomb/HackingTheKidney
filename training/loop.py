@@ -235,7 +235,6 @@ class Trainer:
 
     def __init__(self,
                  model: Module,
-                 writer: torch.utils.tensorboard.writer.SummaryWriter,
                  threshold: float,
                  criterion: Module,
                  optimizer: torch.optim.Optimizer,
@@ -243,7 +242,8 @@ class Trainer:
                  device: str,
                  root_path: str,
                  training_dataset: HuBMAPDataset,
-                 validation_dataset: Optional[HuBMAPDataset] = None):
+                 validation_dataset: Optional[HuBMAPDataset] = None,
+                 writer: torch.utils.tensorboard.writer.SummaryWriter = None):
         """
         :param model: models to train
         :param threshold: minimum value used to threshold models outputs: predicted mask = output > threshold
@@ -298,16 +298,17 @@ class Trainer:
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
-        # Plot to tensorboard
-        if 'lr' in stats.metrics:
-            self.writer.add_scalar('Hyperparameters/Learning Rate', stats.read_metric(epoch, 'lr'), epoch)
-        self.writer.add_scalars('Losses', {"Loss": stats.read_metric(epoch, 'loss')}, epoch)
-        self.writer.add_scalars('Metrics', {
-            "IoU": stats.read_metric(epoch, 'iou'),
-            "Dice Coefficient": stats.read_metric(epoch, 'dice_coefficient'),
-            "Pixel Accuracy": stats.read_metric(epoch, 'pixel_accuracy')
-        }, epoch)
-        self.writer.flush()
+        if self.writer is not None:
+            # Plot to tensorboard
+            if 'lr' in stats.metrics:
+                self.writer.add_scalar('Hyperparameters/Learning Rate', stats.read_metric(epoch, 'lr'), epoch)
+            self.writer.add_scalars('Losses', {"Loss": stats.read_metric(epoch, 'loss')}, epoch)
+            self.writer.add_scalars('Metrics', {
+                "IoU": stats.read_metric(epoch, 'iou'),
+                "Dice Coefficient": stats.read_metric(epoch, 'dice_coefficient'),
+                "Pixel Accuracy": stats.read_metric(epoch, 'pixel_accuracy')
+            }, epoch)
+            self.writer.flush()
 
     def evaluate(self,
                  epoch: int,
