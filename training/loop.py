@@ -120,7 +120,10 @@ class Statistics:
         :param metric:
         :return:
         """
-        return np.mean(self.stats[epoch][metric])
+        if metric == 'loss':
+            return np.sum(self.stats[epoch][metric])
+        else:
+            return np.mean(self.stats[epoch][metric])
 
     def save(self, path: str) -> None:
         """
