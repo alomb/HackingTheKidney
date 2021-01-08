@@ -17,6 +17,7 @@ from tqdm import tqdm
 import torch
 from torch.nn import Module
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from evaluation.metrics import iou, pixel_accuracy, dice_coefficient
 from preprocess.dataset import HuBMAPDataset, denormalize_images
@@ -128,7 +129,7 @@ class SchedulerWrapper:
     """
 
     def __init__(self,
-                 scheduler: object,
+                 scheduler: torch.optim.lr_scheduler,
                  reset_strategy: Optional[Callable[[int], bool]]):
         """
         :param scheduler: a learning rate scheduler
@@ -214,6 +215,7 @@ class Trainer:
 
     def __init__(self,
                  model: Module,
+                 writer: torch.utils.tensorboard.writer.SummaryWriter,
                  threshold: float,
                  criterion: Module,
                  optimizer: torch.optim.Optimizer,
@@ -223,8 +225,8 @@ class Trainer:
                  training_dataset: HuBMAPDataset,
                  validation_dataset: Optional[HuBMAPDataset] = None):
         """
-        :param model: model to train
-        :param threshold: minimum value used to threshold model outputs: predicted mask = output > threshold
+        :param model: models to train
+        :param threshold: minimum value used to threshold models outputs: predicted mask = output > threshold
         :param criterion: loss function
         :param optimizer: optimizer used during training
         :param batch_size: size of batches used to create a DataLoader
@@ -234,7 +236,7 @@ class Trainer:
         :param validation_dataset: optional custom dataset to retrieve images and masks for validation
         """
 
-        # TODO in the future consider avoiding copy and pass the model
+        # TODO in the future consider avoiding copy and pass the models
         self.model = model
         self.threshold = threshold
         self.criterion = criterion
@@ -251,6 +253,8 @@ class Trainer:
         self.std = training_dataset.std
         self.root_path = root_path
         self.device = device
+
+        self.writer = writer
 
     def print_stats(self,
                     stats: Statistics,
@@ -274,13 +278,24 @@ class Trainer:
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
+        # Plot to tensorboard
+        self.writer.add_scalar('Hyperparameters/Learning Rate', stats.stats[epoch]['lr'], epoch)
+        self.writer.add_scalars('Losses', {"Loss": stats.stats[epoch]['loss']}, epoch)
+        self.writer.add_scalars('Metrics', {
+            "IoU": stats.stats[epoch]['iou'],
+            "Dice Coefficient": stats.stats[epoch]['dice_coefficient'],
+            "Pixel Accuracy": stats.stats[epoch]['pixel_accuracy']
+        }, epoch)
+
+        self.writer.flush()
+
     def evaluate(self,
                  epoch: int,
                  stats: Statistics,
                  verbosity_level: List[TrainerVerbosity] = (),
                  limit: int = math.inf) -> None:
         """
-        Method used to evaluate the model
+        Method used to evaluate the models
 
         :param epoch: current epoch
         :param stats: statistics tracker
@@ -371,7 +386,7 @@ class Trainer:
               limit: int = math.inf,
               evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
-        Train the model
+        Train the models
 
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
@@ -509,7 +524,7 @@ class Trainer:
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 saving_path = os.path.join(weights_dir, f'weights_{epoch}.pt')
                 if TrainerVerbosity.PROGRESS in verbosity_level:
-                    print('Saved model at', saving_path)
+                    print('Saved models at', saving_path)
                 torch.save(self.model.state_dict(), saving_path)
 
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
