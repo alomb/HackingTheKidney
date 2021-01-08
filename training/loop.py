@@ -87,7 +87,7 @@ class Statistics:
         # TODO: This does not make to much sense in my opinion
         else:
             # Update counter
-            self.stats[epoch][stat][0] = (curr_value[0] + value[0]) if curr_value[0] is not None else value[0]
+            self.stats[epoch][stat][0] = (curr_value[0] + 1) if curr_value[0] is not None else 1
 
             # Update value
             self.stats[epoch][stat][1] = (curr_value[1] + value[1]) if curr_value[1] is not None else value[1]
@@ -298,17 +298,29 @@ class Trainer:
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
-        if self.writer is not None:
-            # Plot to tensorboard
-            if 'lr' in stats.metrics:
-                self.writer.add_scalar('Hyperparameters/Learning Rate', stats.read_metric(epoch, 'lr'), epoch)
-            self.writer.add_scalars('Losses', {"Loss": stats.read_metric(epoch, 'loss')}, epoch)
-            self.writer.add_scalars('Metrics', {
-                "IoU": stats.read_metric(epoch, 'iou'),
-                "Dice Coefficient": stats.read_metric(epoch, 'dice_coefficient'),
-                "Pixel Accuracy": stats.read_metric(epoch, 'pixel_accuracy')
-            }, epoch)
-            self.writer.flush()
+    def write_on_tensorboard(self, train_stats: Statistics, val_stats: Statistics, epoch: int):
+        if self.writer is None:
+            return
+        # Plot to tensorboard
+        if 'lr' in train_stats.metrics:
+            self.writer.add_scalar('Hyperparameters/Learning Rate', train_stats.read_metric(epoch, 'lr'), epoch)
+        self.writer.add_scalars('Losses', {
+            "Train Loss": train_stats.read_metric(epoch, 'loss'),
+            "Val Loss": val_stats.read_metric(epoch, 'loss')
+        }, epoch)
+        self.writer.add_scalars('Metrics/IoU', {
+            "Train IoU": train_stats.read_metric(epoch, 'iou'),
+            "Val IoU": val_stats.read_metric(epoch, 'iou'),
+        }, epoch)
+        self.writer.add_scalars('Metrics/Dice Coefficient', {
+            "Train Dice Coefficient": train_stats.read_metric(epoch, 'dice_coefficient'),
+            "Val Dice Coefficient": val_stats.read_metric(epoch, 'dice_coefficient'),
+        }, epoch)
+        self.writer.add_scalars('Metrics/IoU', {
+            "Train Pixel Accuracy": train_stats.read_metric(epoch, 'pixel_accuracy'),
+            "Val Pixel Accuracy": val_stats.read_metric(epoch, 'pixel_accuracy'),
+        }, epoch)
+        self.writer.flush()
 
     def evaluate(self,
                  epoch: int,
@@ -383,7 +395,6 @@ class Trainer:
                                                         preds[i].detach().squeeze(0)])
 
                 # Update stats
-
                 stats.update(epoch, 'loss', loss.item())
                 stats.update(epoch, 'iou', iou(preds, masks).mean().item())
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
@@ -546,7 +557,7 @@ class Trainer:
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 saving_path = os.path.join(weights_dir, f'weights_{epoch}.pt')
                 if TrainerVerbosity.PROGRESS in verbosity_level:
-                    print('Saved models at', saving_path)
+                    print('\nSaved model at', saving_path)
                 torch.save(self.model.state_dict(), saving_path)
 
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
@@ -559,6 +570,8 @@ class Trainer:
                 if TrainerVerbosity.PROGRESS in verbosity_level:
                     print(f"{'-' * 100}\nValidation phase:")
                 self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
+
+            self.write_on_tensorboard(stats, eval_stats)
 
             if scheduler:
                 if type(scheduler.scheduler) is ReduceLROnPlateau:
