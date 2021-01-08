@@ -64,15 +64,16 @@ class Statistics:
         """
 
         self.accumulate = accumulate
+        self.metrics = metrics
 
-        if accumulate:
+        if not accumulate:
             self.stats = {epoch: {s: [] for s in metrics}
                           for epoch in range(1, epochs + 1)}
         else:
             self.stats = {epoch: {s: (None, None) for s in metrics}
                           for epoch in range(1, epochs + 1)}
 
-    def update(self, epoch: int, stat: str, value: Union[int, float]) -> None:
+    def update(self, epoch: int, stat: str, value: Tuple[int, float]) -> None:
         """
         :param epoch: current epoch
         :param stat: the stat to update
@@ -81,21 +82,22 @@ class Statistics:
 
         curr_value = self.stats[epoch][stat]
 
-        if self.accumulate:
+        if not self.accumulate:
             curr_value.append(value)
+        # TODO: This does not make to much sense in my opinion
         else:
-            # Update value
-            self.stats[epoch][stat][0] = (curr_value[0] + value) if curr_value[0] is not None else value
-
             # Update counter
-            self.stats[epoch][stat][1] = (curr_value[1] + 1) if curr_value[1] is not None else 1
+            self.stats[epoch][stat][0] = (curr_value[0] + value[0]) if curr_value[0] is not None else value[0]
+
+            # Update value
+            self.stats[epoch][stat][1] = (curr_value[1] + value[1]) if curr_value[1] is not None else value[1]
 
     def get_all_averages(self) -> Dict:
         """
         :return: averaged statistics at each epoch (including those not already computed)
         """
 
-        if self.accumulate:
+        if not self.accumulate:
             return {e: {s: np.mean(self.stats[e][s]) for s in self.stats[e]} for e in self.stats}
         else:
             return {e: {s: (self.stats[e][s][0] / self.stats[e][s][1]) for s in self.stats[e]} for e in self.stats}
@@ -106,10 +108,19 @@ class Statistics:
         :return: the state stats averaged at each epoch (including those not already computed)
         """
 
-        if self.accumulate:
+        if not self.accumulate:
             return [np.mean(self.stats[e][stat]) for e in self.stats]
         else:
             return [self.stats[e][stat][0] / self.stats[e][stat][1] for e in self.stats]
+
+    def read_metric(self, epoch: int, metric: str):
+        """
+
+        :param epoch:
+        :param metric:
+        :return:
+        """
+        return np.mean(self.stats[epoch][metric])
 
     def save(self, path: str) -> None:
         """
@@ -285,14 +296,14 @@ class Trainer:
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
         # Plot to tensorboard
-        self.writer.add_scalar('Hyperparameters/Learning Rate', stats.stats[epoch]['lr'], epoch)
-        self.writer.add_scalars('Losses', {"Loss": stats.stats[epoch]['loss']}, epoch)
+        if 'lr' in stats.metrics:
+            self.writer.add_scalar('Hyperparameters/Learning Rate', stats.read_metric(epoch, 'lr'), epoch)
+        self.writer.add_scalars('Losses', {"Loss": stats.read_metric(epoch, 'loss')}, epoch)
         self.writer.add_scalars('Metrics', {
-            "IoU": stats.stats[epoch]['iou'],
-            "Dice Coefficient": stats.stats[epoch]['dice_coefficient'],
-            "Pixel Accuracy": stats.stats[epoch]['pixel_accuracy']
+            "IoU": stats.read_metric(epoch, 'iou'),
+            "Dice Coefficient": stats.read_metric(epoch, 'dice_coefficient'),
+            "Pixel Accuracy": stats.read_metric(epoch, 'pixel_accuracy')
         }, epoch)
-
         self.writer.flush()
 
     def evaluate(self,
@@ -368,6 +379,7 @@ class Trainer:
                                                         preds[i].detach().squeeze(0)])
 
                 # Update stats
+
                 stats.update(epoch, 'loss', loss.item())
                 stats.update(epoch, 'iou', iou(preds, masks).mean().item())
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
@@ -389,7 +401,7 @@ class Trainer:
               early_stopping: Optional[EarlyStopping] = None,
               verbosity_level: List[TrainerVerbosity] = (),
               evaluation_verbosity_level: List[TrainerVerbosity] = (),
-              limit: int = math.inf,
+              training_limit: int = math.inf,
               evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
         Train the models
@@ -424,7 +436,7 @@ class Trainer:
         # Initialize statistics
         stats = Statistics(epochs,
                            stats_keys + ['lr'],
-                           accumulate=True)
+                           accumulate=False)
 
         # Check if the validation dataset has been defined
         if evaluate and self.validation_data_loader is None:
@@ -438,7 +450,7 @@ class Trainer:
         if evaluate:
             eval_stats = Statistics(epochs,
                                     stats_keys,
-                                    accumulate=True)
+                                    accumulate=False)
 
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
@@ -460,7 +472,7 @@ class Trainer:
             for images, masks in data_stream:
 
                 # TODO remove this
-                if i == limit:
+                if i == training_limit:
                     break
                 i += 1
 
