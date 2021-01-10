@@ -47,20 +47,20 @@ class TrainerVerbosity(enum.Enum):
 
 def init_wandb(project_name: str,
                username: str,
-               tensorboard_root_dir: Optional[str],
                run_name: Optional[str] = None,
-               tags: Optional[List[str]] = None):
+               tags: Optional[List[str]] = None,
+               tensorboard_root_dir: Optional[str] = None):
 
     """
     Initialize W&B allowing the synchronization with TensorBoard.
 
     :param project_name: W&B project name.
     :param username: W&B entity name.
+    :param run_name: name of the running experiment. If None is assigned randomly by W&B.
+    :param tags: list of tags associated to the run.
     :param tensorboard_root_dir: root directory used by TensorBoard. Can be used instead of passing use_wandb True in
     the train method of the Trainer to use directly TensorBoard, but there are some open issues in the library
     https://github.com/wandb/client/issues/357 and even if it works results are not perfect.
-    :param run_name: name of the running experiment. If None is assigned randomly by W&B.
-    :param tags: list of tags associated to the run.
     """
 
     if tensorboard_root_dir is not None:
@@ -513,6 +513,17 @@ class Trainer:
             eval_stats = Statistics(epochs,
                                     stats_keys,
                                     accumulate=False)
+
+        if self.use_wandb:
+            wandb.watch(self.model)
+            wandb.config.update({"Model": str(self.model),
+                                 "Threshold": self.threshold,
+                                 "Criterion": str(self.criterion),
+                                 "Optimizer": str(self.optimizer),
+                                 "Early Stopping": str(early_stopping),
+                                 "Scheduler": str(scheduler),
+                                 "Batch size": self.batch_size,
+                                 "Epochs": epochs})
 
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
