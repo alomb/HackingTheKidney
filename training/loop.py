@@ -73,7 +73,7 @@ class Statistics:
             self.stats = {epoch: {s: (None, None) for s in metrics}
                           for epoch in range(1, epochs + 1)}
 
-    def update(self, epoch: int, stat: str, value: Tuple[int, float]) -> None:
+    def update(self, epoch: int, stat: str, value: Union[float, Tuple[int, float]]) -> None:
         """
         :param epoch: current epoch
         :param stat: the stat to update
@@ -84,7 +84,6 @@ class Statistics:
 
         if not self.accumulate:
             curr_value.append(value)
-        # TODO: This does not make to much sense in my opinion
         else:
             # Update counter
             self.stats[epoch][stat][0] = (curr_value[0] + 1) if curr_value[0] is not None else 1
@@ -92,38 +91,14 @@ class Statistics:
             # Update value
             self.stats[epoch][stat][1] = (curr_value[1] + value[1]) if curr_value[1] is not None else value[1]
 
-    def get_all_averages(self) -> Dict:
-        """
-        :return: averaged statistics at each epoch (including those not already computed)
-        """
-
-        if not self.accumulate:
-            return {e: {s: np.mean(self.stats[e][s]) for s in self.stats[e]} for e in self.stats}
-        else:
-            return {e: {s: (self.stats[e][s][0] / self.stats[e][s][1]) for s in self.stats[e]} for e in self.stats}
-
-    def get_averaged_stat(self, stat: str) -> List:
-        """
-        :param stat: the selected state
-        :return: the state stats averaged at each epoch (including those not already computed)
-        """
-
-        if not self.accumulate:
-            return [np.mean(self.stats[e][stat]) for e in self.stats]
-        else:
-            return [self.stats[e][stat][0] / self.stats[e][stat][1] for e in self.stats]
-
-    def read_metric(self, epoch: int, metric: str):
+    def read_metric(self, epoch: int, metric: str) -> float:
         """
 
         :param epoch:
         :param metric:
         :return:
         """
-        if metric == 'loss':
-            return np.sum(self.stats[epoch][metric])
-        else:
-            return np.mean(self.stats[epoch][metric])
+        return np.mean(self.stats[epoch][metric]).item()
 
     def save(self, path: str) -> None:
         """
@@ -245,8 +220,8 @@ class Trainer:
                  validation_dataset: Optional[HuBMAPDataset] = None,
                  writer: torch.utils.tensorboard.writer.SummaryWriter = None):
         """
-        :param model: models to train
-        :param threshold: minimum value used to threshold models outputs: predicted mask = output > threshold
+        :param model: model to train
+        :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
         :param criterion: loss function
         :param optimizer: optimizer used during training
         :param batch_size: size of batches used to create a DataLoader
@@ -291,8 +266,8 @@ class Trainer:
         # Time is already indicated by tqdm
         if print_epoch_time:
             print('Epoch/Evaluation ended in', round(stats.stats[epoch]['epoch_time'][-1]), 'seconds')
-        print('Average batch time \t', round(np.mean(stats.stats[epoch]['batch_time'])), 'seconds')
-        print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']), 4))
+        print('Average batch time \t', round(np.mean(stats.stats[epoch]['batch_time']).item()), 'seconds')
+        print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']).item(), 4))
         print('Metrics:')
         print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
@@ -328,7 +303,7 @@ class Trainer:
                  verbosity_level: List[TrainerVerbosity] = (),
                  limit: int = math.inf) -> None:
         """
-        Method used to evaluate the models
+        Method used to evaluate the model
 
         :param epoch: current epoch
         :param stats: statistics tracker
@@ -419,7 +394,7 @@ class Trainer:
               training_limit: int = math.inf,
               evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
-        Train the models
+        Train the model
 
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
@@ -430,7 +405,7 @@ class Trainer:
         :param early_stopping: early stopping policy and tracker
         :param verbosity_level: list containing different keys for each type of requested information (training)
         :param evaluation_verbosity_level: list containing different keys for each type of requested information
-        :param limit: the number of batches to debug TODO remove this
+        :param training_limit: the number of batches to debug TODO remove this
         :param evaluation_limit: the number of batches to debug in evaluation TODO remove this
         :return: statistics of training and if required of evaluation
         """
@@ -571,17 +546,17 @@ class Trainer:
                     print(f"{'-' * 100}\nValidation phase:")
                 self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
 
-            self.write_on_tensorboard(stats, eval_stats)
+            self.write_on_tensorboard(stats, eval_stats, epoch)
 
             if scheduler:
                 if type(scheduler.scheduler) is ReduceLROnPlateau:
-                    scheduler.step({'metrics': eval_stats.get_averaged_stat('loss')[epoch - 1]})
+                    scheduler.step({'metrics': eval_stats.read_metric(epoch, 'loss')})
 
                 # Apply scheduler resetting
                 scheduler.reset(epoch)
 
             if early_stopping:
-                if early_stopping.step(eval_stats.get_averaged_stat('loss')[epoch - 1]):
+                if early_stopping.step(eval_stats.read_metric(epoch, 'loss')):
                     if TrainerVerbosity.PROGRESS in verbosity_level:
                         print('Early Stopping!')
 
