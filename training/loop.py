@@ -291,7 +291,7 @@ class Trainer:
             "Train Dice Coefficient": train_stats.read_metric(epoch, 'dice_coefficient'),
             "Val Dice Coefficient": val_stats.read_metric(epoch, 'dice_coefficient'),
         }, epoch)
-        self.writer.add_scalars('Metrics/IoU', {
+        self.writer.add_scalars('Metrics/Pixel Accuracy', {
             "Train Pixel Accuracy": train_stats.read_metric(epoch, 'pixel_accuracy'),
             "Val Pixel Accuracy": val_stats.read_metric(epoch, 'pixel_accuracy'),
         }, epoch)
@@ -569,4 +569,5 @@ class Trainer:
             if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f"{'=' * 100}")
 
+        self.writer.close()
         return stats, eval_stats
