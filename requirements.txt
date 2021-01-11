@@ -91,6 +91,7 @@ tifffile==2020.12.8
 timm==0.3.2
 toml==0.10.2
 torch==1.7.1
+torchsummary==1.5.1
 torchvision==0.8.2
 tornado==6.1
 tqdm==4.54.1

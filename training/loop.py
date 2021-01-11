@@ -15,6 +15,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlat
 from torchvision.transforms import transforms
 from functools import partial
 from tqdm import tqdm
+import wandb
 
 import torch
 from torch.nn import Module
@@ -42,9 +43,37 @@ class TrainerVerbosity(enum.Enum):
     TENSORS = 3
     # Show involved images
     IMAGES = 4
-    # Frequency for tensors and images during training and evaluation
-    TENSORS_TRAIN_FREQ = 53
-    TENSORS_EVAL_FREQ = 30
+
+
+def init_wandb(project_name: str,
+               username: str,
+               run_name: Optional[str] = None,
+               tags: Optional[List[str]] = None,
+               tensorboard_root_dir: Optional[str] = None):
+
+    """
+    Initialize W&B allowing the synchronization with TensorBoard.
+
+    :param project_name: W&B project name.
+    :param username: W&B entity name.
+    :param run_name: name of the running experiment. If None is assigned randomly by W&B.
+    :param tags: list of tags associated to the run.
+    :param tensorboard_root_dir: root directory used by TensorBoard. Can be used instead of passing use_wandb True in
+    the train method of the Trainer to use directly TensorBoard, but there are some open issues in the library
+    https://github.com/wandb/client/issues/357 and even if it works results are not perfect.
+    """
+
+    if tensorboard_root_dir is not None:
+        wandb.tensorboard.patch(root_logdir=tensorboard_root_dir,
+                                tensorboardX=False,
+                                save=True,
+                                pytorch=True)
+
+    wandb.init(project=project_name,
+               entity=username,
+               name=run_name,
+               tags=tags,
+               force=True)
 
 
 class Statistics:
@@ -218,7 +247,8 @@ class Trainer:
                  root_path: str,
                  training_dataset: HuBMAPDataset,
                  validation_dataset: Optional[HuBMAPDataset] = None,
-                 writer: torch.utils.tensorboard.writer.SummaryWriter = None):
+                 writer: torch.utils.tensorboard.writer.SummaryWriter = None,
+                 use_wandb: bool = False):
         """
         :param model: model to train
         :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
@@ -229,9 +259,10 @@ class Trainer:
         :param root_path: the path of the root
         :param training_dataset: custom dataset to retrieve images and masks for training
         :param validation_dataset: optional custom dataset to retrieve images and masks for validation
+        :param use_wandb: if True it logs data directly to W&B. It expects wandb already initialized to the correct
+        project.
         """
 
-        # TODO in the future consider avoiding copy and pass the models
         self.model = model
         self.threshold = threshold
         self.criterion = criterion
@@ -250,6 +281,11 @@ class Trainer:
         self.device = device
 
         self.writer = writer
+        self.use_wandb = use_wandb
+
+        # Frequency for tensors and images during training and evaluation
+        self.image_tensor_train_freq = 1
+        self.image_tensor_eval_freq = 1
 
     def print_stats(self,
                     stats: Statistics,
@@ -273,7 +309,17 @@ class Trainer:
         print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
-    def write_on_tensorboard(self, train_stats: Statistics, val_stats: Statistics, epoch: int):
+    def write_on_tensorboard(self,
+                             train_stats: Statistics,
+                             val_stats: Statistics,
+                             epoch: int):
+        """
+        Update the parameters on local TensorBoard.
+
+        :param train_stats: training statistics
+        :param val_stats: validation statistics
+        :param epoch: current epoch
+        """
         if self.writer is None:
             return
         # Plot to tensorboard
@@ -296,6 +342,32 @@ class Trainer:
             "Val Pixel Accuracy": val_stats.read_metric(epoch, 'pixel_accuracy'),
         }, epoch)
         self.writer.flush()
+
+    def write_on_wandb(self,
+                       train_stats: Statistics,
+                       val_stats: Statistics,
+                       epoch: int):
+        """
+        Update the parameters on W&B
+
+        :param train_stats: training statistics
+        :param val_stats: validation statistics
+        :param epoch: current epoch
+        """
+        if self.use_wandb is False:
+            return
+        if 'lr' in train_stats.metrics:
+            wandb.log({"Learning Rate": train_stats.read_metric(epoch, 'lr')})
+
+        wandb.log({
+            "Train Loss": train_stats.read_metric(epoch, 'loss'),
+            "Val Loss": val_stats.read_metric(epoch, 'loss'),
+            "Train IoU": train_stats.read_metric(epoch, 'iou'),
+            "Val IoU": val_stats.read_metric(epoch, 'iou'),
+            "Train Dice Coefficient": train_stats.read_metric(epoch, 'dice_coefficient'),
+            "Val Dice Coefficient": val_stats.read_metric(epoch, 'dice_coefficient'),
+            "Train Pixel Accuracy": train_stats.read_metric(epoch, 'pixel_accuracy'),
+            "Val Pixel Accuracy": val_stats.read_metric(epoch, 'pixel_accuracy')})
 
     def evaluate(self,
                  epoch: int,
@@ -344,7 +416,7 @@ class Trainer:
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
-                if TrainerVerbosity.TENSORS in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
+                if TrainerVerbosity.TENSORS in verbosity_level and l % self.image_tensor_eval_freq == 0:
                     print(f'Image ({images.shape}):\n{images}\n')
                     print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
                     print(f'Masks ({masks.shape}):\n{masks}\n')
@@ -354,7 +426,7 @@ class Trainer:
                     print(f'Loss:\n{loss.item()}\n')
 
                 # Show images
-                if TrainerVerbosity.IMAGES in verbosity_level and l % TrainerVerbosity.TENSORS_EVAL_FREQ.value == 0:
+                if TrainerVerbosity.IMAGES in verbosity_level and l % self.image_tensor_eval_freq == 0:
                     masks = masks.cpu()
                     outputs = outputs.cpu()
                     preds = preds.cpu()
@@ -442,6 +514,17 @@ class Trainer:
                                     stats_keys,
                                     accumulate=False)
 
+        if self.use_wandb:
+            wandb.watch(self.model)
+            wandb.config.update({"Model": str(self.model),
+                                 "Threshold": self.threshold,
+                                 "Criterion": str(self.criterion),
+                                 "Optimizer": str(self.optimizer),
+                                 "Early Stopping": str(early_stopping),
+                                 "Scheduler": str(scheduler),
+                                 "Batch size": self.batch_size,
+                                 "Epochs": epochs})
+
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
             weights_dir = os.path.join(self.root_path, weights_dir)
@@ -496,7 +579,7 @@ class Trainer:
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
-                if TrainerVerbosity.TENSORS in verbosity_level and i % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
+                if TrainerVerbosity.TENSORS in verbosity_level and i % self.image_tensor_train_freq == 0:
                     print(f'Image ({images.shape}):\n{images}\n')
                     print(f'Max and min value: {images.max().item()}, {images.min().item()}\n')
                     print(f'Masks ({masks.shape}):\n{masks}\n')
@@ -506,7 +589,7 @@ class Trainer:
                     print(f'Loss:\n{loss.item()}\n')
 
                 # Show images
-                if TrainerVerbosity.IMAGES in verbosity_level and i % TrainerVerbosity.TENSORS_TRAIN_FREQ.value == 0:
+                if TrainerVerbosity.IMAGES in verbosity_level and i % self.image_tensor_train_freq == 0:
                     masks = masks.cpu()
                     outputs = outputs.cpu()
                     preds = preds.cpu()
@@ -547,6 +630,7 @@ class Trainer:
                 self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
 
             self.write_on_tensorboard(stats, eval_stats, epoch)
+            self.write_on_wandb(stats, eval_stats, epoch)
 
             if scheduler:
                 if type(scheduler.scheduler) is ReduceLROnPlateau:
@@ -564,10 +648,15 @@ class Trainer:
                     if weights_dir is not None and weights_dir != '':
                         torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
+                    if self.writer:
+                        self.writer.close()
+
                     return stats, eval_stats
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f"{'=' * 100}")
 
-        self.writer.close()
+        if self.writer:
+            self.writer.close()
+
         return stats, eval_stats
