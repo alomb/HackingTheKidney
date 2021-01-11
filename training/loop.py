@@ -19,7 +19,7 @@ import wandb
 
 import torch
 from torch.nn import Module
-from torch.utils.data import DataLoader
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from evaluation.metrics import iou, pixel_accuracy, dice_coefficient
@@ -59,8 +59,8 @@ def init_wandb(project_name: str,
     :param run_name: name of the running experiment. If None is assigned randomly by W&B.
     :param tags: list of tags associated to the run.
     :param tensorboard_root_dir: root directory used by TensorBoard. Can be used instead of passing use_wandb True in
-    the train method of the Trainer to use directly TensorBoard, but there are some open issues in the library
-    https://github.com/wandb/client/issues/357 and even if it works results are not perfect.
+    the Trainer constructor to use directly TensorBoard, but there are some open issues in the library
+    (https://github.com/wandb/client/issues/357) and even if it works the results are not great and warnings are raised.
     """
 
     if tensorboard_root_dir is not None:
@@ -357,7 +357,7 @@ class Trainer:
         if self.use_wandb is False:
             return
         if 'lr' in train_stats.metrics:
-            wandb.log({"Learning Rate": train_stats.read_metric(epoch, 'lr')})
+            wandb.log({"Learning Rate": train_stats.read_metric(epoch, 'lr')}, commit=False)
 
         wandb.log({
             "Train Loss": train_stats.read_metric(epoch, 'loss'),
