@@ -220,10 +220,10 @@ class HookNet(nn.Module):
                  res_t,
                  res_c,
                  encoder_name: str = "resnet34",
-                 encoder_depth: int = 4,
+                 encoder_depth: int = 5,
                  encoder_weights: Optional[str] = "imagenet",
                  decoder_use_batchnorm: bool = True,
-                 decoder_channels: List[int] = (256, 128, 64, 32),
+                 decoder_channels: List[int] = (256, 128, 64, 32, 16),
                  in_channels: int = 3,
                  classes: int = 1,
                  activation: Optional[Union[str, callable]] = None):
@@ -314,25 +314,25 @@ class HookNet(nn.Module):
         initialization.initialize_head(self.target_head)
         initialization.initialize_head(self.context_head)
 
-    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, x: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
         """
         Sequentially pass the image trough model's encoder, decoder and heads of both target and context branches,
         combining their strategy with the the hooking strategy.
 
-        :param x: the input image
+        :param x: the target and contextual input image
         :return: the predicted mask from the target and context branch
         """
 
         # Context branch
         # Use normally the context branch to extract the different features
-        context_enc_features = self.context_encoder(x)
+        context_enc_features = self.context_encoder(x[1])
         # Get the features at each depth and the output
         context_output, context_dec_features = self.context_decoder(*context_enc_features)
         # Get the prediction of the context
         context_preds = self.context_head(context_output)
 
         # Target branch
-        target_enc_features = self.target_encoder(x)
+        target_enc_features = self.target_encoder(x[0])
 
         # Hooking
         # Extract and cut from the specific depth the region and concatenate it to the target features in the bottleneck
@@ -375,20 +375,22 @@ def test_hooknet():
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
 
-    training_dataset, training_images, _, _ = get_training_validation_sets(images_path,
-                                                                           masks_path,
-                                                                           0.3,
-                                                                           {'train': None, 'val': None},
-                                                                           mean,
-                                                                           std)
+    training_dataset, _, _, _ = get_training_validation_sets(images_path,
+                                                             masks_path,
+                                                             0.3,
+                                                             {'train': None, 'val': None},
+                                                             'cpu',
+                                                             mean=mean,
+                                                             std=std)
 
-    hooknet = HookNet(2.0, 8.0)
+    hooknet = HookNet(1.0, 2.0, 'efficientnet-b0')
 
     # print(hooknet)
 
-    image, mask = training_dataset[0]
+    image1, mask1 = training_dataset[0]
+    image2, mask2 = training_dataset[0]
 
-    pred = hooknet(image.unsqueeze(0))
+    pred = hooknet((torch.stack([image1, image2]), torch.stack([image1, image2])))
 
 
 if __name__ == "__main__":
