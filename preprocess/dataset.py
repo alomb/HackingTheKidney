@@ -3,6 +3,7 @@ import random
 from typing import Tuple, List, Dict, Optional, Union
 
 import albumentations
+import cv2
 from PIL import Image
 import numpy as np
 
@@ -90,8 +91,8 @@ class HuBMAPDataset(Dataset):
                  images_path: str,
                  masks_path: str,
                  device: str,
-                 mean: Optional[List[float]],
-                 std: Optional[List[float]],
+                 mean: Optional[List[float]] = None,
+                 std: Optional[List[float]] = None,
                  augmentations: Optional[albumentations.Compose] = None):
         """
         If mean and standard deviations are not passed images are not transformed to tensors.
@@ -168,6 +169,7 @@ class ContextualHuBMAPDataset:
                  target_dataset: HuBMAPDataset,
                  context_dataset: HuBMAPDataset,
                  device: str,
+                 reduction: int,
                  mean: Optional[List[float]],
                  std: Optional[List[float]],
                  augmentations: Optional[albumentations.Compose] = None):
@@ -177,6 +179,7 @@ class ContextualHuBMAPDataset:
         :param context_dataset: dataset containing images and masks for the context branch (same number of images of the
         target dataset)
         :param device the device used 'cpu' or 'cuda' where PyTorch tensors are passed
+        :param reduction: a reduction factor applied to the contextual images
         :param mean: mean for each channel (RGB)
         :param std: standard deviation of each channel (RGB)
         :param augmentations: image augmentations operations. It is expected to have been declared passing
@@ -206,6 +209,7 @@ class ContextualHuBMAPDataset:
         self.context_dataset = context_dataset
         self.device = device
 
+        self.reduction = reduction
         self.augmentations = augmentations
         self.to_tensor = transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize(mean, std)])
@@ -240,7 +244,13 @@ class ContextualHuBMAPDataset:
             target_image = transformed['image']
             target_mask = transformed['mask']
             context_image = transformed['context_image']
+            context_image = albumentations.Resize(context_image.shape[0] / self.reduction,
+                                                  context_image.shape[1] / self.reduction,
+                                                  interpolation=cv2.INTER_AREA, p=1)(context_image)
             context_mask = transformed['context_mask']
+            context_mask = albumentations.Resize(context_mask.shape[0] / self.reduction,
+                                                 context_mask.shape[1] / self.reduction,
+                                                 interpolation=cv2.INTER_AREA, p=1)(context_mask)
 
         # Transform to tensor
         return (self.to_tensor(target_image).to(self.device),
