@@ -187,13 +187,13 @@ class ContextualHuBMAPDataset:
         images equally.
         """
 
-        assert len(self.target_dataset.images) == len(self.context_dataset.images), \
+        assert len(target_dataset.images) == len(context_dataset.images), \
             'Contextual and target dataset must have the same number of images and masks!'
 
-        assert self.target_dataset.augmentations is not None or self.context_dataset.augmentations is not None, \
+        assert target_dataset.augmentations is None or context_dataset.augmentations is None, \
             'Contextual and target dataset must not apply independent augmentations! Images must be equally augmented.'
 
-        assert self.target_dataset.to_tensor is not None or self.context_dataset.to_tensor is not None, \
+        assert target_dataset.to_tensor is None or context_dataset.to_tensor is None, \
             'Contextual and target dataset must not return PyTorch tensors but Numpy arrays in order to apply here ' \
             'the required transformations!'
 
@@ -211,6 +211,9 @@ class ContextualHuBMAPDataset:
 
         self.reduction = reduction
         self.augmentations = augmentations
+
+        self.mean = mean
+        self.std = std
         self.to_tensor = transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize(mean, std)])
 
@@ -244,14 +247,14 @@ class ContextualHuBMAPDataset:
             target_image = transformed['image']
             target_mask = transformed['mask']
             context_image = transformed['context_image']
-            context_image = albumentations.Resize(context_image.shape[0] / self.reduction,
-                                                  context_image.shape[1] / self.reduction,
-                                                  interpolation=cv2.INTER_AREA, p=1)(context_image)
             context_mask = transformed['context_mask']
-            context_mask = albumentations.Resize(context_mask.shape[0] / self.reduction,
-                                                 context_mask.shape[1] / self.reduction,
-                                                 interpolation=cv2.INTER_AREA, p=1)(context_mask)
 
+        context_resized = albumentations.Resize(context_image.shape[0] // self.reduction,
+                                                context_image.shape[1] // self.reduction,
+                                                interpolation=cv2.INTER_AREA, p=1)(image=context_image,
+                                                                                   mask=context_mask)
+
+        context_image, context_mask = context_resized['image'], context_resized['mask']
         # Transform to tensor
         return (self.to_tensor(target_image).to(self.device),
                 self.to_tensor(context_image).to(self.device)), \

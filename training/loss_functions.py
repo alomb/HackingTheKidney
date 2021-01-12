@@ -18,7 +18,7 @@ class BinaryDiceLoss(Module):
     dice_loss = (1 - dice_coefficient)
     """
 
-    def __init__(self, logits: bool = True,):
+    def __init__(self, logits: bool = True):
         """
         :param logits: if True it expects predictions as logits, so it passes them into a sigmoid function
         """
@@ -213,3 +213,54 @@ class CombinationLoss(Module):
                 final_loss = new_loss
 
         return final_loss
+
+
+class HookNetLoss(Module):
+    """
+    Loss described in the paper which combines the binary cross entropy loss from the context branch the one from the
+    target image.
+    """
+
+    def __init__(self,
+                 logits: bool = True,
+                 target_importance=0.75):
+        """
+        :param logits: if True it expects predictions as logits, so it passes them into a sigmoid function
+        :param target_importance: weight applied to the target loss. (1 - target_importance) is applied to the context
+        loss.
+        """
+
+        super(HookNetLoss, self).__init__()
+        assert 0 <= target_importance <= 1, "Target importance must be a weight between 0 and 1."
+
+        self.logits = logits
+        self.target_importance = target_importance
+        self.ce_loss = BinaryFocalLoss(logits)
+
+    def forward(self,
+                preds: Union[tuple, list],
+                labels: Union[tuple, list]) -> Tensor:
+        """
+        :param preds: predicted binary masks from target and context branches
+        :param labels: ground truth binary masks from target and context datasets
+        :return: the mean of (1 - dice_coefficient) for each pair of masks in the batch
+        """
+
+        if not type(preds) in [tuple, list]:
+            raise TypeError(f'Predictions type is not a tuple of torch.Tensor. Got {format(type(preds))}')
+        if not type(labels) in [tuple, list]:
+            raise TypeError(f'Labels type is not a tuple of torch.Tensor. Got {format(type(labels))}')
+
+        target_label = labels[0]
+        context_label = labels[1]
+
+        # Apply sigmoid if the network outputs are logits
+        if self.logits:
+            target_pred = torch.sigmoid(preds[0])
+            context_pred = torch.sigmoid(preds[1])
+        else:
+            target_pred = preds[0]
+            context_pred = preds[1]
+
+        return self.target_importance * self.ce_loss(target_pred, target_label) + \
+               (1 - self.target_importance) * self.ce_loss(context_pred, context_label)

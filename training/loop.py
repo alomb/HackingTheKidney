@@ -407,6 +407,14 @@ class Trainer:
 
                 loss = self.criterion(outputs, masks)
 
+                # To deal with models that have contexts like HookNet
+                if type(outputs) in [tuple, list]:
+                    outputs = outputs[0]
+                if type(images) in [tuple, list]:
+                    images = images[0]
+                if type(masks) in [tuple, list]:
+                    masks = masks[0]
+
                 preds = (outputs > self.threshold).long()
 
                 # Print tensors
@@ -566,6 +574,14 @@ class Trainer:
                         scheduler.step({'epoch': epoch + i / len(self.training_data_loader)})
                     elif type(scheduler.scheduler) is not ReduceLROnPlateau:
                         scheduler.step()
+
+                # To deal with models that have contexts like HookNet
+                if type(outputs) in [tuple, list]:
+                    outputs = outputs[0]
+                if type(images) in [tuple, list]:
+                    images = images[0]
+                if type(masks) in [tuple, list]:
+                    masks = masks[0]
 
                 preds = (outputs > self.threshold).long()
 
