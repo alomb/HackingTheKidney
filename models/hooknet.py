@@ -226,7 +226,8 @@ class HookNet(nn.Module):
                  decoder_channels: List[int] = (256, 128, 64, 32, 16),
                  in_channels: int = 3,
                  classes: int = 1,
-                 activation: Optional[Union[str, callable]] = None):
+                 activation: Optional[Union[str, callable]] = None,
+                 verbose: bool = False):
         """
         :param res_t: resolution target in µm/px
         :param res_c: resolution context in µm/px
@@ -249,8 +250,11 @@ class HookNet(nn.Module):
         activation: An activation function to apply after the final convolution layer.
         Available options are **"sigmoid"**, **"softmax"**, **"logsoftmax"**, **"identity"**, **callable** and **None**.
         Default is **None**
+        :param verbose
         """
         super(HookNet, self).__init__()
+
+        self.verbose = verbose
 
         # Check whether the different resolutions are legal and allow the hooking mechanism.
         assert 2 ** encoder_depth * res_t >= res_c, "2^(D) * res_t >= res_c must be true!"
@@ -336,8 +340,9 @@ class HookNet(nn.Module):
 
         # Hooking
         # Extract and cut from the specific depth the region and concatenate it to the target features in the bottleneck
-        print("Target encoding feature shape", target_enc_features[-1].shape)
-        print("Context encoding feature shape", context_dec_features[int(self.hook_depth)].shape)
+        if self.verbose:
+            print("Target encoding feature shape", target_enc_features[-1].shape)
+            print("Context encoding feature shape", context_dec_features[int(self.hook_depth)].shape)
 
         # Get the head of the target's encoder
         target_head_width = target_enc_features[-1].shape[2]
@@ -353,7 +358,8 @@ class HookNet(nn.Module):
                          (context_hooked_height - target_head_height) // 2:
                          (context_hooked_height - target_head_height) // 2 + target_head_height]
 
-        print("Hooked feature shape", hooked_feature.shape)
+        if self.verbose:
+            print("Hooked feature shape", hooked_feature.shape)
 
         # Hook
         target_enc_features[-1] = torch.cat([target_enc_features[-1], hooked_feature], dim=1)
