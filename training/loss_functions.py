@@ -63,7 +63,7 @@ class BinaryFocalLoss(Module):
     def __init__(self,
                  logits: bool = True,
                  gamma: float = 0.0,
-                 alpha: float = 1.0):
+                 alpha: float = 0.5):
         """
         :param logits: if True it expects predictions as logits, so it uses binary_cross_entropy_with_logits
         :param gamma: the focusing parameter (e.g. 0, 0.5, 1, 2, 5)
@@ -101,8 +101,14 @@ class BinaryFocalLoss(Module):
                                            labels.type_as(preds),
                                            reduction='none')
 
+        # Weights depend on the class
+        at = torch.tensor([1 - self.alpha, self.alpha]).\
+            to(labels.device).\
+            gather(0, labels.data.view(-1)).\
+            reshape(*labels.shape)
+
         pt = torch.clamp(-logpt.exp(), min=-100)
-        return torch.mean(self.alpha * ((1 - pt) ** self.gamma) * logpt)
+        return torch.mean(at * ((1 - pt) ** self.gamma) * logpt)
 
 
 class BinaryLovaszLoss(Module):
