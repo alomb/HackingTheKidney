@@ -249,12 +249,14 @@ class ContextualHuBMAPDataset:
             context_image = transformed['context_image']
             context_mask = transformed['context_mask']
 
-        context_resized = albumentations.Resize(context_image.shape[0] // self.reduction,
-                                                context_image.shape[1] // self.reduction,
-                                                interpolation=cv2.INTER_AREA, p=1)(image=context_image,
-                                                                                   mask=context_mask)
+        context_image = cv2.resize(context_image, (context_image.shape[1] // self.reduction,
+                                                   context_image.shape[0] // self.reduction),
+                                   interpolation=cv2.INTER_AREA)
 
-        context_image, context_mask = context_resized['image'], context_resized['mask']
+        context_mask = cv2.resize(context_mask, (context_mask.shape[1] // self.reduction,
+                                                 context_mask.shape[0] // self.reduction),
+                                  interpolation=cv2.INTER_NEAREST)
+
         # Transform to tensor
         return (self.to_tensor(target_image).to(self.device),
                 self.to_tensor(context_image).to(self.device)), \

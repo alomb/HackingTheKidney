@@ -63,17 +63,19 @@ class BinaryFocalLoss(Module):
     def __init__(self,
                  logits: bool = True,
                  gamma: float = 0.0,
-                 alpha: float = 0.5):
+                 alpha: float = 0.5,
+                 device: str = 'cuda'):
         """
         :param logits: if True it expects predictions as logits, so it uses binary_cross_entropy_with_logits
         :param gamma: the focusing parameter (e.g. 0, 0.5, 1, 2, 5)
         :param alpha: the weight to apply to the foreground class
+        :param device: PyTorch device
         """
 
         super(BinaryFocalLoss, self).__init__()
         self.logits = logits
         self.gamma = gamma
-        self.alpha = alpha
+        self.alpha = torch.tensor([1 - alpha, alpha]).to(device)
 
     def forward(self,
                 preds: Tensor,
@@ -102,13 +104,10 @@ class BinaryFocalLoss(Module):
                                            reduction='none')
 
         # Weights depend on the class
-        at = torch.tensor([1 - self.alpha, self.alpha]).\
-            to(labels.device).\
-            gather(0, labels.data.view(-1)).\
-            reshape(*labels.shape)
+        at = self.alpha.gather(0, labels.view(-1))
 
-        pt = torch.clamp(-logpt.exp(), min=-100)
-        return torch.mean(at * ((1 - pt) ** self.gamma) * logpt)
+        pt = torch.clamp(-logpt.exp(), min=-100).view(-1)
+        return torch.mean(at * ((1 - pt) ** self.gamma) * logpt.view(-1))
 
 
 class BinaryLovaszLoss(Module):
@@ -229,11 +228,17 @@ class HookNetLoss(Module):
 
     def __init__(self,
                  logits: bool = True,
-                 target_importance=0.75):
+                 target_importance=0.75,
+                 gamma: float = 0.0,
+                 alpha: float = 0.5,
+                 device: str = 'cuda'):
         """
         :param logits: if True it expects predictions as logits, so it passes them into a sigmoid function
         :param target_importance: weight applied to the target loss. (1 - target_importance) is applied to the context
         loss.
+        :param gamma: the focusing parameter (e.g. 0, 0.5, 1, 2, 5)
+        :param alpha: the weight to apply to the foreground class
+        :param device: PyTorch device
         """
 
         super(HookNetLoss, self).__init__()
@@ -241,7 +246,10 @@ class HookNetLoss(Module):
 
         self.logits = logits
         self.target_importance = target_importance
-        self.ce_loss = BinaryFocalLoss(logits)
+        self.ce_loss = BinaryFocalLoss(logits,
+                                       gamma=gamma,
+                                       alpha=alpha,
+                                       device=device)
 
     def forward(self,
                 preds: Union[tuple, list],
