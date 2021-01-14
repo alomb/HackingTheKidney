@@ -4,13 +4,14 @@ from typing import Optional, List, Union, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
 from segmentation_models_pytorch.base import SegmentationHead, initialization, Conv2dReLU
 from segmentation_models_pytorch.encoders import get_encoder
 from segmentation_models_pytorch.unet.decoder import CenterBlock
 from torch import Tensor
 
 from preprocess.dataset import get_training_validation_sets
-from utils import set_deterministic_colab
 
 
 class HookNetDecoderBlock(nn.Module):
@@ -23,17 +24,24 @@ class HookNetDecoderBlock(nn.Module):
                  in_channels: int,
                  skip_channels: int,
                  out_channels: int,
-                 use_batchnorm: bool = True):
+                 use_batchnorm: bool = True,
+                 use_transposed_conv: bool = True):
         """
 
         :param in_channels: number of input channels
         :param skip_channels: number of channels added by the skip connections
         :param out_channels: number of output channels
         :param use_batchnorm: if True applies batch normalization after the 2 convolutional blocks
+        :param use_transposed_conv: if True uses Transposed convolution to upsample otherwise interpolation
         """
         super().__init__()
 
-        self.transposed_conv = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=2, stride=2)
+        self.use_transposed_conv = use_transposed_conv
+        if use_transposed_conv:
+            self.transposed_conv = nn.ConvTranspose2d(in_channels,
+                                                      in_channels,
+                                                      kernel_size=2,
+                                                      stride=2)
 
         self.conv1 = Conv2dReLU(
             in_channels + skip_channels,
@@ -62,7 +70,10 @@ class HookNetDecoderBlock(nn.Module):
         :return: the resulting feature map
         """
         # Upsample
-        x = self.transposed_conv(x)
+        if self.use_transposed_conv:
+            x = self.transposed_conv(x)
+        else:
+            x = F.interpolate(x, scale_factor=2, mode="nearest")
         # Concatenate features from the skip connection
         if skip is not None:
             x = torch.cat([x, skip], dim=1)
@@ -83,6 +94,7 @@ class HookNetDecoder(nn.Module):
             decoder_channels: List[int],
             n_blocks: int = 5,
             use_batchnorm: bool = True,
+            use_transposed_conv: bool = True,
             center: bool = False):
         """
 
@@ -90,6 +102,7 @@ class HookNetDecoder(nn.Module):
         :param decoder_channels: list containing for each depth of the decoding path the number of channels
         :param n_blocks: number of decoding blocks
         :param use_batchnorm: if True applies batch norm in the blocks
+        :param use_transposed_conv: if True uses Transposed convolution to upsample otherwise interpolation
         :param center: if True crop the center of the feature map passed by the skip connection
         """
 
@@ -102,16 +115,24 @@ class HookNetDecoder(nn.Module):
                 )
             )
 
-        # Remove first skip with same spatial resolution
+        # Remove first which has the number of the image's number of channels
+        # e.g (3, 32, 24, 40, 112, 320) -> (32, 24, 40, 112, 320)
         encoder_channels = encoder_channels[1:]
         # Reverse channels to start from the head of the encoder
+        # e.g. (320, 112, 40, 24, 32)
         encoder_channels = encoder_channels[::-1]
 
         # Computing blocks input and output channels
+        # e.g. 320
         head_channels = encoder_channels[0]
+        # e.g. [320, 256, 128, 64, 32] excludes decoder's last layer number of channel
         in_channels = [head_channels] + list(decoder_channels[:-1])
+        # e.g. [112, 40, 24, 32, 0]
         skip_channels = list(encoder_channels[1:]) + [0]
+        # e.g. (256, 128, 64, 32, 16)
         out_channels = decoder_channels
+
+        # The decoder blocks will have a number of input channels equal to the sum of skip_channels and in_channels
 
         if center:
             self.center = CenterBlock(
@@ -121,7 +142,7 @@ class HookNetDecoder(nn.Module):
             self.center = nn.Identity()
 
         # combine decoder keyword arguments
-        kwargs = dict(use_batchnorm=use_batchnorm)
+        kwargs = dict(use_batchnorm=use_batchnorm, use_transposed_conv=use_transposed_conv)
         blocks = [
             HookNetDecoderBlock(in_ch, skip_ch, out_ch, **kwargs) for in_ch, skip_ch, out_ch in
             zip(in_channels, skip_channels, out_channels)
@@ -212,7 +233,8 @@ class HookNet(nn.Module):
 
     D) Loss function
 
-    TODO
+    See HookNetLoss in the training.loss_functions module. It is a weighted combination of the target and context
+    losses.
 
     """
 
@@ -223,6 +245,7 @@ class HookNet(nn.Module):
                  encoder_depth: int = 5,
                  encoder_weights: Optional[str] = "imagenet",
                  decoder_use_batchnorm: bool = True,
+                 use_transposed_conv: bool = True,
                  decoder_channels: List[int] = (256, 128, 64, 32, 16),
                  in_channels: int = 3,
                  classes: int = 1,
@@ -235,16 +258,15 @@ class HookNet(nn.Module):
         to extract features of different spatial resolution
         :param encoder_depth: A number of stages used in encoder in range [3, 5]. Each stage generate features
         two times smaller in spatial dimensions than previous one (e.g. for depth 0 we will have features
-        with shapes [(N, C, H, W),], for depth 1 - [(N, C, H, W), (N, C, H // 2, W // 2)] and so on).
-        Default is 5
+        with shapes [(N, C, H, W),], for depth 1, [(N, C, H, W), (N, C, H // 2, W // 2)] and so on). Default is 5
         :param encoder_weights: One of **None** (random initialization), **"imagenet"** (pre-training on ImageNet) and
         other pretrained weights (see table with available weights for each encoder_name)
         :param decoder_channels: List of integers which specify **in_channels** parameter for convolutions used in
         decoder. Length of the list should be the same as **encoder_depth**
         :param decoder_use_batchnorm: If **True**, BatchNorm2d layer between Conv2D and Activation layers
         is used. If **"inplace"** InplaceABN will be used, allows to decrease memory consumption.
-        Available options are **True, False, "inplace"**
-        and **scse**. SCSE paper - https://arxiv.org/abs/1808.08127
+        Available options are **True, False, "inplace"** and **scse**. SCSE paper - https://arxiv.org/abs/1808.08127
+        :param use_transposed_conv: if True uses Transposed convolution to upsample otherwise interpolation
         :param in_channels: A number of input channels for the model, default is 3 (RGB images)
         classes: A number of classes for output mask (or you can think as a number of channels of output mask)
         activation: An activation function to apply after the final convolution layer.
@@ -259,9 +281,9 @@ class HookNet(nn.Module):
         # Check whether the different resolutions are legal and allow the hooking mechanism.
         assert 2 ** encoder_depth * res_t >= res_c, "2^(D) * res_t >= res_c must be true!"
 
-        self.hook_depth = math.log2((res_t / res_c) * 2 ** encoder_depth)
-        self.hook_filters = decoder_channels[int(self.hook_depth) - 1]
-        print(f"Hooking occurs at depth {self.hook_depth} of the context decoder (filters = {self.hook_filters}).")
+        self.hook_depth = math.log2((res_t / res_c) * 2 ** encoder_depth) - 1
+        self.hook_filters = decoder_channels[int(self.hook_depth)]
+        print(f"Hooking occurs at depth {self.hook_depth} of the context decoder (channels = {decoder_channels}).")
 
         # Context branch
         self.context_encoder = get_encoder(encoder_name,
@@ -273,6 +295,7 @@ class HookNet(nn.Module):
                                               decoder_channels=decoder_channels,
                                               n_blocks=encoder_depth,
                                               use_batchnorm=decoder_use_batchnorm,
+                                              use_transposed_conv=use_transposed_conv,
                                               center=True if encoder_name.startswith("vgg") else False)
 
         self.context_head = SegmentationHead(in_channels=decoder_channels[-1],
@@ -293,13 +316,14 @@ class HookNet(nn.Module):
 
         # Change the number of channels expected by the target branch decoder path because of hooking mechanism
         target_encoder_out_channels = list(self.target_encoder.out_channels)
-        target_encoder_out_channels[-1] += decoder_channels[int(self.hook_depth) - 1]
+        target_encoder_out_channels[-1] += decoder_channels[int(self.hook_depth)]
         print("Encoder out channels with hooking", target_encoder_out_channels)
 
         self.target_decoder = HookNetDecoder(encoder_channels=target_encoder_out_channels,
                                              decoder_channels=decoder_channels,
                                              n_blocks=encoder_depth,
                                              use_batchnorm=decoder_use_batchnorm,
+                                             use_transposed_conv=use_transposed_conv,
                                              center=True if encoder_name.startswith("vgg") else False)
 
         self.name = "h-{}".format(encoder_name)
@@ -327,7 +351,10 @@ class HookNet(nn.Module):
         :return: the predicted mask from the target and context branch
         """
 
+        # --------------
         # Context branch
+        # --------------
+
         # Use normally the context branch to extract the different features
         context_enc_features = self.context_encoder(x[1])
         # Get the features at each depth and the output
@@ -335,19 +362,22 @@ class HookNet(nn.Module):
         # Get the prediction of the context
         context_preds = self.context_head(context_output)
 
+        # --------------
         # Target branch
+        # --------------
+
+        # Pass the target image to the encoder
         target_enc_features = self.target_encoder(x[0])
 
         # Hooking
         # Extract and cut from the specific depth the region and concatenate it to the target features in the bottleneck
-        if self.verbose:
-            print("Target encoding feature shape", target_enc_features[-1].shape)
-            print("Context encoding feature shape", context_dec_features[int(self.hook_depth)].shape)
 
-        # Get the head of the target's encoder
+        # Get the head resolution size of the target's encoder
         target_head_width = target_enc_features[-1].shape[2]
         target_head_height = target_enc_features[-1].shape[3]
 
+        # Remove the first feature (head) from the context decoder
+        context_dec_features = context_dec_features[1:]
         context_hooked_width = context_dec_features[int(self.hook_depth)].shape[2]
         context_hooked_height = context_dec_features[int(self.hook_depth)].shape[3]
 
@@ -359,6 +389,8 @@ class HookNet(nn.Module):
                          (context_hooked_height - target_head_height) // 2 + target_head_height]
 
         if self.verbose:
+            print("Target encoding feature shape", target_enc_features[-1].shape)
+            print("Context encoding feature shape", context_dec_features[int(self.hook_depth)].shape)
             print("Hooked feature shape", hooked_feature.shape)
 
         # Hook
@@ -376,7 +408,14 @@ def test_hooknet():
     masks_path = os.path.join('data', '256x256', 'masks')
 
     seed = 42
-    set_deterministic_colab(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    # Configure cuDNN to deterministically select an algorithm at each run
+    # Set False to change this behaviour, performance may be impacted
+    torch.backends.cudnn.benchmark = True
+    # Configure cuDNN to choose deterministic algorithms
+    torch.backends.cudnn.deterministic = True
 
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
@@ -389,7 +428,10 @@ def test_hooknet():
                                                              mean=mean,
                                                              std=std)
 
-    hooknet = HookNet(1.0, 2.0, 'efficientnet-b0')
+    hooknet = HookNet(1.0,
+                      2.0,
+                      'efficientnet-b0',
+                      verbose=True)
 
     # print(hooknet)
 
