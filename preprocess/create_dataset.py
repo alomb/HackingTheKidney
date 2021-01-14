@@ -1,12 +1,10 @@
 import gc
-import os
 import zipfile
 from typing import Optional, Tuple
-
 import numpy as np
-import tifffile as tiff
 import cv2
-
+from typing import List
+import tifffile as tiff
 from utils import rle_decode
 
 
@@ -29,29 +27,27 @@ class ContextConfig:
         self.ctx_size = ctx_size
 
 
-def create_context_target_dataset(image_size,
-                                  input_path,
-                                  image_folder,
-                                  mask_folder,
-                                  df_info,
-                                  limit: int = 100,
-                                  reduce_factor: int = 4,
-                                  context_config: Optional[ContextConfig] = None) -> Tuple[float, float]:
+def create_context_target_dataset(
+        files: List[str],
+        encodings: List[str],
+        size: int = 256,
+        images_zip: str = 'images.zip',
+        masks_zip: str = 'masks.zip',
+        reduce_factor: int = 4,
+        context_config: Optional[ContextConfig] = None
+) -> Tuple[float, float]:
     """
     Creates two zipped folders containing respectively images and related masks extracted as regions from the .tiff
     images and rle encodings in the given path.
 
     Adapted from https://www.kaggle.com/iafoss/256x256-images.
 
-    :param image_size: size of the extracted regions
-    :param input_path: path containing images and masks.
-    (https://www.kaggle.com/c/hubmap-kidney-segmentation/data?select=train)
-    :param image_folder: path that will contain the images
-    :param mask_folder: path that will contain the masks
-    :param df_info: dataframe containing information on the images/masks. Should be extracted from
-    https://www.kaggle.com/c/hubmap-kidney-segmentation/data?select=train.csv
-    :param limit: number of images to parse
-    :param reduce_factor: reducing factor on the original image
+    :param files: the list of TIFF file names
+    :param encodings: the encodings of the segmentations of the files above
+    :param size: the size of each square tile in which the image will be divided
+    :param images_zip: name of the zipped file that will contain the images
+    :param masks_zip: name of the zipped file that will contain the masks
+    :param reduce_factor: reducing factor to use on the original image before splitting it
     :param context_config: information about the context images, if None contexts are not extracted
 
     :return mean and std computed from the images
@@ -60,48 +56,36 @@ def create_context_target_dataset(image_size,
     # Saturation blanking threshold
     s_th = 40
     # Threshold for the minimum number of pixels to keep an image
-    p_th = 200 * image_size // 256
+    p_th = 200 * size // 256
 
     mean_sum = []
     std_sum = []
 
-    with zipfile.ZipFile(image_folder, 'w') as img_out, \
-            zipfile.ZipFile(mask_folder, 'w') as mask_out:
-        for index, encs in df_info.head(limit).iterrows():
-            print(f'Process image {index}')
-            # Read image and generate the mask
-            img = tiff.imread(os.path.join(input_path, index + '.tiff'))
-            if len(img.shape) == 5:
-                img = np.transpose(img.squeeze(), (1, 2, 0))
-            mask = rle_decode(encs, (img.shape[1], img.shape[0]))
-
+    with zipfile.ZipFile(images_zip, 'w') as img_out, zipfile.ZipFile(masks_zip, 'w') as mask_out:
+        for file, encoding in zip(files, encodings):
+            print(file)
+            image = tiff.imread(file + '.tiff')
+            mask = rle_decode(encoding, (image.shape[1], image.shape[0]))
             # Add padding to make the image dividable into tiles
-            shape = img.shape
-            pad0 = (reduce_factor * image_size - shape[0] % (reduce_factor * image_size)) % (reduce_factor * image_size)
-            pad1 = (reduce_factor * image_size - shape[1] % (reduce_factor * image_size)) % (reduce_factor * image_size)
-            img = np.pad(img, [[pad0 // 2, pad0 - pad0 // 2], [pad1 // 2, pad1 - pad1 // 2], [0, 0]],
-                         constant_values=0)
-            mask = np.pad(mask, [[pad0 // 2, pad0 - pad0 // 2], [pad1 // 2, pad1 - pad1 // 2]],
-                          constant_values=0)
+            shape = image.shape
+            pad0 = (reduce_factor * size - shape[0] % (reduce_factor * size)) % (reduce_factor * size)
+            pad1 = (reduce_factor * size - shape[1] % (reduce_factor * size)) % (reduce_factor * size)
+            img = np.pad(image, [[pad0 // 2, pad0 - pad0 // 2], [pad1 // 2, pad1 - pad1 // 2], [0, 0]], constant_values=0)
+            mask = np.pad(mask, [[pad0 // 2, pad0 - pad0 // 2], [pad1 // 2, pad1 - pad1 // 2]], constant_values=0)
 
             # Split image and mask into tiles using the reshape+transpose trick
-            img = cv2.resize(img, (img.shape[1] // reduce_factor, img.shape[0] // reduce_factor),
-                             interpolation=cv2.INTER_AREA)
-            img = img.reshape(img.shape[0] // image_size, image_size, img.shape[1] // image_size, image_size, 3)
-
-            # Number of columns
-            cols = img.shape[2]
-
-            img = img.transpose(0, 2, 1, 3, 4).reshape(-1, image_size, image_size, 3)
-
-            mask = cv2.resize(mask, (mask.shape[1] // reduce_factor, mask.shape[0] // reduce_factor),
-                              interpolation=cv2.INTER_NEAREST)
-            mask = mask.reshape(mask.shape[0] // image_size, image_size, mask.shape[1] // image_size, image_size)
-            mask = mask.transpose(0, 2, 1, 3).reshape(-1, image_size, image_size)
+            img = cv2.resize(img, (img.shape[1] // reduce_factor, img.shape[0] // reduce_factor), interpolation=cv2.INTER_AREA)
+            img = img.reshape(img.shape[0] // size, size, img.shape[1] // size, size, 3)
+            img = img.transpose(0, 2, 1, 3, 4).reshape(-1, size, size, 3)
+            mask = cv2.resize(mask, (mask.shape[1] // reduce_factor, mask.shape[0] // reduce_factor), interpolation=cv2.INTER_NEAREST)
+            mask = mask.reshape(mask.shape[0] // size, size, mask.shape[1] // size, size)
+            mask = mask.transpose(0, 2, 1, 3).reshape(-1, size, size)
 
             # Columns and rows positions used then to extract contexts of the chosen images
             col = 0
             row = -1
+            # Number of columns
+            cols = img.shape[2]
             cols_ctx = []
             rows_ctx = []
             filenames_ctx = []
@@ -131,9 +115,9 @@ def create_context_target_dataset(image_size,
 
                 # Write on memory
                 im = cv2.imencode('.png', cv2.cvtColor(im, cv2.COLOR_RGB2BGR))[1]
-                img_out.writestr(f'{index}_{i}.png', im)
+                img_out.writestr(f'{file}_{i}.png', im)
                 m = cv2.imencode('.png', m)[1]
-                mask_out.writestr(f'{index}_{i}.png', m)
+                mask_out.writestr(f'{file}_{i}.png', m)
 
             # Free space
             del img
@@ -144,22 +128,15 @@ def create_context_target_dataset(image_size,
             with zipfile.ZipFile(context_config.image_folder, 'w') as img_out_ctx, \
                     zipfile.ZipFile(context_config.mask_folder, 'w') as mask_out_ctx:
 
-                print("Creating context images...")
-                # read image and generate the mask
-                img_ctx = tiff.imread(os.path.join(input_path, index + '.tiff'))
-                if len(img_ctx.shape) == 5:
-                    img_ctx = np.transpose(img_ctx.squeeze(), (1, 2, 0))
-                mask_ctx = rle_decode(encs, (img_ctx.shape[1], img_ctx.shape[0]))
+                pad0_ctx = pad0 + (context_config.ctx_size * reduce_factor - size * reduce_factor)
+                pad1_ctx = pad1 + (context_config.ctx_size * reduce_factor - size * reduce_factor)
 
-                pad0_ctx = pad0 + (context_config.ctx_size * reduce_factor - image_size * reduce_factor)
-                pad1_ctx = pad1 + (context_config.ctx_size * reduce_factor - image_size * reduce_factor)
-
-                img_ctx = np.pad(img_ctx,
+                img_ctx = np.pad(image,
                                  [[pad0_ctx // 2, pad0_ctx - pad0_ctx // 2],
                                   [pad1_ctx // 2, pad1_ctx - pad1_ctx // 2],
                                   [0, 0]],
                                  constant_values=0)
-                mask_ctx = np.pad(mask_ctx,
+                mask_ctx = np.pad(mask,
                                   [[pad0_ctx // 2, pad0_ctx - pad0_ctx // 2],
                                    [pad1_ctx // 2, pad1_ctx - pad1_ctx // 2]],
                                   constant_values=0)
@@ -174,23 +151,23 @@ def create_context_target_dataset(image_size,
                 for i, (row, col) in enumerate(zip(rows_ctx, cols_ctx)):
                     # Cut region
                     # Vertical and horizontal start and end region delimiters
-                    v_s = row * image_size
-                    v_e = row * image_size + context_config.ctx_size
-                    h_s = col * image_size
-                    h_e = col * image_size + context_config.ctx_size
+                    v_s = row * size
+                    v_e = row * size + context_config.ctx_size
+                    h_s = col * size
+                    h_e = col * size + context_config.ctx_size
 
                     im_ctx = img_ctx[v_s: v_e, h_s: h_e]
                     m_ctx = mask_ctx[v_s: v_e, h_s: h_e]
 
                     # Write on memory
                     im_ctx = cv2.imencode('.png', cv2.cvtColor(im_ctx, cv2.COLOR_RGB2BGR))[1]
-                    img_out_ctx.writestr(f'{index}_{filenames_ctx[i]}.png', im_ctx)
+                    img_out_ctx.writestr(f'{file}_{filenames_ctx[i]}.png', im_ctx)
                     m_ctx = cv2.imencode('.png', m_ctx)[1]
-                    mask_out_ctx.writestr(f'{index}_{filenames_ctx[i]}.png', m_ctx)
+                    mask_out_ctx.writestr(f'{file}_{filenames_ctx[i]}.png', m_ctx)
 
             del img_ctx
             del mask_ctx
             gc.collect()
 
     mean = np.mean(mean_sum)
-    return mean, np.sqrt(np.mean(std_sum) - mean**2)
+    return mean.item(), np.sqrt(np.mean(std_sum) - mean**2)
