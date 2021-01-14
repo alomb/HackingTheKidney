@@ -18,7 +18,7 @@ class BinaryDiceLoss(Module):
     dice_loss = (1 - dice_coefficient)
     """
 
-    def __init__(self, logits: bool = True,):
+    def __init__(self, logits: bool = True):
         """
         :param logits: if True it expects predictions as logits, so it passes them into a sigmoid function
         """
@@ -63,17 +63,19 @@ class BinaryFocalLoss(Module):
     def __init__(self,
                  logits: bool = True,
                  gamma: float = 0.0,
-                 alpha: float = 1.0):
+                 alpha: float = 0.5,
+                 device: str = 'cuda'):
         """
         :param logits: if True it expects predictions as logits, so it uses binary_cross_entropy_with_logits
         :param gamma: the focusing parameter (e.g. 0, 0.5, 1, 2, 5)
         :param alpha: the weight to apply to the foreground class
+        :param device: PyTorch device
         """
 
         super(BinaryFocalLoss, self).__init__()
         self.logits = logits
         self.gamma = gamma
-        self.alpha = alpha
+        self.alpha = torch.tensor([1 - alpha, alpha]).to(device)
 
     def forward(self,
                 preds: Tensor,
@@ -101,8 +103,11 @@ class BinaryFocalLoss(Module):
                                            labels.type_as(preds),
                                            reduction='none')
 
-        pt = torch.clamp(-logpt.exp(), min=-100)
-        return torch.mean(self.alpha * ((1 - pt) ** self.gamma) * logpt)
+        # Weights depend on the class
+        at = self.alpha.gather(0, labels.view(-1))
+
+        pt = torch.clamp(-logpt.exp(), min=-100).view(-1)
+        return torch.mean(at * ((1 - pt) ** self.gamma) * logpt.view(-1))
 
 
 class BinaryLovaszLoss(Module):
@@ -213,3 +218,63 @@ class CombinationLoss(Module):
                 final_loss = new_loss
 
         return final_loss
+
+
+class HookNetLoss(Module):
+    """
+    Loss described in the paper which combines the binary cross entropy loss from the context branch the one from the
+    target image.
+    """
+
+    def __init__(self,
+                 logits: bool = True,
+                 target_importance=0.75,
+                 gamma: float = 0.0,
+                 alpha: float = 0.5,
+                 device: str = 'cuda'):
+        """
+        :param logits: if True it expects predictions as logits, so it passes them into a sigmoid function
+        :param target_importance: weight applied to the target loss. (1 - target_importance) is applied to the context
+        loss.
+        :param gamma: the focusing parameter (e.g. 0, 0.5, 1, 2, 5)
+        :param alpha: the weight to apply to the foreground class
+        :param device: PyTorch device
+        """
+
+        super(HookNetLoss, self).__init__()
+        assert 0 <= target_importance <= 1, "Target importance must be a weight between 0 and 1."
+
+        self.logits = logits
+        self.target_importance = target_importance
+        self.ce_loss = BinaryFocalLoss(logits,
+                                       gamma=gamma,
+                                       alpha=alpha,
+                                       device=device)
+
+    def forward(self,
+                preds: Union[tuple, list],
+                labels: Union[tuple, list]) -> Tensor:
+        """
+        :param preds: predicted binary masks from target and context branches
+        :param labels: ground truth binary masks from target and context datasets
+        :return: the mean of (1 - dice_coefficient) for each pair of masks in the batch
+        """
+
+        if not type(preds) in [tuple, list]:
+            raise TypeError(f'Predictions type is not a tuple of torch.Tensor. Got {format(type(preds))}')
+        if not type(labels) in [tuple, list]:
+            raise TypeError(f'Labels type is not a tuple of torch.Tensor. Got {format(type(labels))}')
+
+        target_label = labels[0]
+        context_label = labels[1]
+
+        # Apply sigmoid if the network outputs are logits
+        if self.logits:
+            target_pred = torch.sigmoid(preds[0])
+            context_pred = torch.sigmoid(preds[1])
+        else:
+            target_pred = preds[0]
+            context_pred = preds[1]
+
+        return self.target_importance * self.ce_loss(target_pred, target_label) + \
+               (1 - self.target_importance) * self.ce_loss(context_pred, context_label)

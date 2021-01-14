@@ -1,6 +1,8 @@
 import albumentations
 
 import numpy as np
+import cv2
+
 from albumentations import RandomRotate90
 import albumentations.augmentations.functional as F
 
@@ -68,7 +70,8 @@ def get_dihedral_transformations(probability: float = 1) -> albumentations.OneOf
 
 def get_augmentations(train: bool = True,
                       dihedral_p: float = 0.9,
-                      distortion_p: float = 0.8) -> albumentations.Compose:
+                      distortion_p: float = 0.8,
+                      resize_size: int = None) -> albumentations.Compose:
     """
     Compose:
     - dihedral augmentations
@@ -77,8 +80,15 @@ def get_augmentations(train: bool = True,
     :param train: change augmentations depending on the working split
     :param dihedral_p: probability to apply the dihedral augmentation
     :param distortion_p: probability to apply the distortion augmentation
+    :param resize_size: size used to resize both train and test images if None resizing is not applied
     :return: a composition of augmentations
     """
+
+    if resize_size is not None:
+        resizing = [albumentations.Resize(resize_size, resize_size, interpolation=cv2.INTER_AREA, p=1)]
+    else:
+        resizing = []
+
     if train:
         return albumentations.Compose([get_dihedral_transformations(dihedral_p),
                                        albumentations.OneOf([albumentations.ElasticTransform(p=0.5,
@@ -88,6 +98,7 @@ def get_augmentations(train: bool = True,
                                                              albumentations.GridDistortion(p=0.5),
                                                              albumentations.OpticalDistortion(distort_limit=1,
                                                                                               shift_limit=0.5,
-                                                                                              p=1)], p=distortion_p)])
+                                                                                              p=1)], p=distortion_p)] +
+                                      resizing)
     else:
-        return albumentations.Compose([])
+        return albumentations.Compose(resizing)

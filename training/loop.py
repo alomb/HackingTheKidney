@@ -243,7 +243,6 @@ class Trainer:
                  criterion: Module,
                  optimizer: torch.optim.Optimizer,
                  batch_size: int,
-                 device: str,
                  root_path: str,
                  training_dataset: HuBMAPDataset,
                  validation_dataset: Optional[HuBMAPDataset] = None,
@@ -255,7 +254,6 @@ class Trainer:
         :param criterion: loss function
         :param optimizer: optimizer used during training
         :param batch_size: size of batches used to create a DataLoader
-        :param device: device used
         :param root_path: the path of the root
         :param training_dataset: custom dataset to retrieve images and masks for training
         :param validation_dataset: optional custom dataset to retrieve images and masks for validation
@@ -278,7 +276,6 @@ class Trainer:
         self.mean = training_dataset.mean
         self.std = training_dataset.std
         self.root_path = root_path
-        self.device = device
 
         self.writer = writer
         self.use_wandb = use_wandb
@@ -402,9 +399,6 @@ class Trainer:
 
                 batch_start_time = time.time()
 
-                images = images.to(self.device)
-                masks = masks.to(self.device)
-
                 outputs = self.model(images)
 
                 # To handle torchvision.models
@@ -412,6 +406,14 @@ class Trainer:
                     outputs = outputs['out']
 
                 loss = self.criterion(outputs, masks)
+
+                # To deal with models that have contexts like HookNet
+                if type(outputs) in [tuple, list]:
+                    outputs = outputs[0]
+                if type(images) in [tuple, list]:
+                    images = images[0]
+                if type(masks) in [tuple, list]:
+                    masks = masks[0]
 
                 preds = (outputs > self.threshold).long()
 
@@ -551,9 +553,6 @@ class Trainer:
 
                 batch_start_time = time.time()
 
-                images = images.to(self.device)
-                masks = masks.to(self.device)
-
                 # Zero the parameter gradients
                 self.optimizer.zero_grad()
 
@@ -575,6 +574,14 @@ class Trainer:
                         scheduler.step({'epoch': epoch + i / len(self.training_data_loader)})
                     elif type(scheduler.scheduler) is not ReduceLROnPlateau:
                         scheduler.step()
+
+                # To deal with models that have contexts like HookNet
+                if type(outputs) in [tuple, list]:
+                    outputs = outputs[0]
+                if type(images) in [tuple, list]:
+                    images = images[0]
+                if type(masks) in [tuple, list]:
+                    masks = masks[0]
 
                 preds = (outputs > self.threshold).long()
 
