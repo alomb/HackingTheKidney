@@ -513,17 +513,6 @@ class Trainer:
                                     stats_keys,
                                     accumulate=False)
 
-        if self.use_wandb:
-            wandb.watch(self.model)
-            wandb.config.update({"Model": str(self.model),
-                                 "Threshold": self.threshold,
-                                 "Criterion": str(self.criterion),
-                                 "Optimizer": str(self.optimizer),
-                                 "Early Stopping": str(early_stopping),
-                                 "Scheduler": str(scheduler),
-                                 "Batch size": self.batch_size,
-                                 "Epochs": epochs})
-
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
             if not os.path.exists(weights_dir):
