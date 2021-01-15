@@ -68,18 +68,18 @@ def get_dihedral_transformations(probability: float = 1) -> albumentations.OneOf
                                                             albumentations.VerticalFlip(p=1)], p=1)], probability)
 
 
-def get_augmentations(train: bool = True,
-                      dihedral_p: float = 0.9,
-                      distortion_p: float = 0.8,
+def get_augmentations(dihedral_p: float = 0.95,
+                      distortion_p: float = 0.75,
+                      color_p: float = 0.25,
                       resize_size: int = None) -> albumentations.Compose:
     """
     Compose:
     - dihedral augmentations
     - distortion augmentations
 
-    :param train: change augmentations depending on the working split
     :param dihedral_p: probability to apply the dihedral augmentation
     :param distortion_p: probability to apply the distortion augmentation
+    :param color_p: probability to apply the color augmentation
     :param resize_size: size used to resize both train and test images if None resizing is not applied
     :return: a composition of augmentations
     """
@@ -89,16 +89,12 @@ def get_augmentations(train: bool = True,
     else:
         resizing = []
 
-    if train:
-        return albumentations.Compose([get_dihedral_transformations(dihedral_p),
-                                       albumentations.OneOf([albumentations.ElasticTransform(p=0.5,
-                                                                                             alpha=120,
-                                                                                             sigma=120 * 0.05,
-                                                                                             alpha_affine=120 * 0.03),
-                                                             albumentations.GridDistortion(p=0.5),
-                                                             albumentations.OpticalDistortion(distort_limit=1,
-                                                                                              shift_limit=0.5,
-                                                                                              p=1)], p=distortion_p)] +
-                                      resizing)
-    else:
-        return albumentations.Compose(resizing)
+    return albumentations.Compose([
+        get_dihedral_transformations(dihedral_p),
+        albumentations.OneOf([
+            albumentations.ElasticTransform(p=1, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+            albumentations.GridDistortion(p=1),
+            albumentations.OpticalDistortion( p=1, distort_limit=1, shift_limit=0.5),
+        ], p=distortion_p),
+        albumentations.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=color_p)
+    ] + resizing)

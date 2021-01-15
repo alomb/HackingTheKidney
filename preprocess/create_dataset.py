@@ -63,7 +63,6 @@ def create_context_target_dataset(
 
     with zipfile.ZipFile(images_zip, 'w') as img_out, zipfile.ZipFile(masks_zip, 'w') as mask_out:
         for file, encoding in zip(files, encodings):
-            print(file)
             image = tiff.imread(file + '.tiff')
             mask = rle_decode(encoding, (image.shape[1], image.shape[0]))
             # Add padding to make the image dividable into tiles
