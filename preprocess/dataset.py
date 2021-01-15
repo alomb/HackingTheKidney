@@ -12,6 +12,14 @@ import torch
 from torch.utils.data import Dataset
 
 
+def get_hubmap_mean_std():
+    """
+
+    :return: saved mean and std computed on the HuBMap training dataset
+    """
+    return [0.65459856, 0.48386562, 0.69428385], [0.15167958, 0.23584107, 0.13146145]
+
+
 def get_training_validation_sets(images_path: str,
                                  masks_path: str,
                                  validation_percentage: float,

@@ -243,7 +243,6 @@ class Trainer:
                  criterion: Module,
                  optimizer: torch.optim.Optimizer,
                  batch_size: int,
-                 root_path: str,
                  training_dataset: HuBMAPDataset,
                  validation_dataset: Optional[HuBMAPDataset] = None,
                  writer: torch.utils.tensorboard.writer.SummaryWriter = None,
@@ -254,7 +253,6 @@ class Trainer:
         :param criterion: loss function
         :param optimizer: optimizer used during training
         :param batch_size: size of batches used to create a DataLoader
-        :param root_path: the path of the root
         :param training_dataset: custom dataset to retrieve images and masks for training
         :param validation_dataset: optional custom dataset to retrieve images and masks for validation
         :param use_wandb: if True it logs data directly to W&B. It expects wandb already initialized to the correct
@@ -275,7 +273,6 @@ class Trainer:
         # Get mean and std from datasets to denormalize and show images
         self.mean = training_dataset.mean
         self.std = training_dataset.std
-        self.root_path = root_path
 
         self.writer = writer
         self.use_wandb = use_wandb
@@ -529,7 +526,6 @@ class Trainer:
 
         # Create directory containing weights
         if weights_dir is not None and weights_dir != '':
-            weights_dir = os.path.join(self.root_path, weights_dir)
             if not os.path.exists(weights_dir):
                 os.makedirs(weights_dir, exist_ok=True)
 
