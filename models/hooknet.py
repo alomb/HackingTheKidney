@@ -1,17 +1,12 @@
 import math
-import os
 from typing import Optional, List, Union, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 from segmentation_models_pytorch.base import SegmentationHead, initialization, Conv2dReLU
 from segmentation_models_pytorch.encoders import get_encoder
 from segmentation_models_pytorch.unet.decoder import CenterBlock
 from torch import Tensor
-
-from preprocess.dataset import get_training_validation_sets
 
 
 class HookNetDecoderBlock(nn.Module):
@@ -38,10 +33,17 @@ class HookNetDecoderBlock(nn.Module):
 
         self.use_transposed_conv = use_transposed_conv
         if use_transposed_conv:
-            self.transposed_conv = nn.ConvTranspose2d(in_channels,
-                                                      in_channels,
-                                                      kernel_size=2,
-                                                      stride=2)
+            self.upsample = nn.ConvTranspose2d(in_channels,
+                                               in_channels,
+                                               kernel_size=2,
+                                               stride=2)
+        else:
+            self.upsample = nn.Sequential(nn.Upsample(scale_factor=2, mode='nearest'),
+                                          nn.Conv2d(in_channels,
+                                                    in_channels,
+                                                    kernel_size=3,
+                                                    stride=1,
+                                                    padding=1))
 
         self.conv1 = Conv2dReLU(
             in_channels + skip_channels,
@@ -70,10 +72,7 @@ class HookNetDecoderBlock(nn.Module):
         :return: the resulting feature map
         """
         # Upsample
-        if self.use_transposed_conv:
-            x = self.transposed_conv(x)
-        else:
-            x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = self.upsample(x)
         # Concatenate features from the skip connection
         if skip is not None:
             x = torch.cat([x, skip], dim=1)
@@ -401,46 +400,3 @@ class HookNet(nn.Module):
         target_preds = self.target_head(target_output)
 
         return target_preds, context_preds
-
-
-def test_hooknet():
-    images_path = os.path.join('data', '256x256', 'train')
-    masks_path = os.path.join('data', '256x256', 'masks')
-
-    seed = 42
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-
-    # Configure cuDNN to deterministically select an algorithm at each run
-    # Set False to change this behaviour, performance may be impacted
-    torch.backends.cudnn.benchmark = True
-    # Configure cuDNN to choose deterministic algorithms
-    torch.backends.cudnn.deterministic = True
-
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
-
-    training_dataset, _, _, _ = get_training_validation_sets(images_path,
-                                                             masks_path,
-                                                             0.3,
-                                                             {'train': None, 'val': None},
-                                                             'cpu',
-                                                             mean=mean,
-                                                             std=std)
-
-    hooknet = HookNet(1.0,
-                      2.0,
-                      'efficientnet-b0',
-                      verbose=True)
-
-    # print(hooknet)
-
-    image1, mask1 = training_dataset[0]
-    image2, mask2 = training_dataset[0]
-
-    pred = hooknet((torch.stack([image1, image2]), torch.stack([image1, image2])))
-
-
-if __name__ == "__main__":
-    # execute only if run as a script
-    test_hooknet()
