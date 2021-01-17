@@ -7,7 +7,8 @@ def freeze_backbone_layers(backbone: nn.Module, freeze: Union[bool, int]):
         for layer in backbone.modules():
             set_requires_grad_for_layer(layer, not freeze)
     else:
-        for layer in list(backbone.modules())[:-freeze]:
+        freezed_layers = list(backbone.modules())[:-freeze]
+        for layer in freezed_layers:
             set_requires_grad_for_layer(layer, False)
 
 
