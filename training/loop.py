@@ -122,10 +122,11 @@ class Statistics:
 
     def read_metric(self, epoch: int, metric: str) -> float:
         """
+        Read a specific metric from the statistics given an epoch and its name
 
-        :param epoch:
-        :param metric:
-        :return:
+        :param epoch: the epoch to consider
+        :param metric: the name of the metric
+        :return: the value of the desired metric
         """
         return np.mean(self.stats[epoch][metric]).item()
 

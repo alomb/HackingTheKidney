@@ -68,14 +68,14 @@ def get_dihedral_transformations(probability: float = 1) -> albumentations.OneOf
                                                             albumentations.VerticalFlip(p=1)], p=1)], probability)
 
 
-def get_augmentations(dihedral_p: float = 0.95,
-                      distortion_p: float = 0.75,
+def get_augmentations(dihedral_p: float = 0.5,
+                      distortion_p: float = 0.33,
                       color_p: float = 0.25,
                       resize_size: int = None) -> albumentations.Compose:
     """
     Compose:
     - dihedral augmentations
-    - distortion augmentations
+    - distortion augmentationsFinally
 
     :param dihedral_p: probability to apply the dihedral augmentation
     :param distortion_p: probability to apply the distortion augmentation
@@ -88,13 +88,18 @@ def get_augmentations(dihedral_p: float = 0.95,
         resizing = [albumentations.Resize(resize_size, resize_size, interpolation=cv2.INTER_AREA, p=1)]
     else:
         resizing = []
-
     return albumentations.Compose([
         get_dihedral_transformations(dihedral_p),
         albumentations.OneOf([
-            albumentations.ElasticTransform(p=1, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+            albumentations.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03, p=1),
             albumentations.GridDistortion(p=1),
-            albumentations.OpticalDistortion( p=1, distort_limit=1, shift_limit=0.5),
+            albumentations.OpticalDistortion(distort_limit=1, shift_limit=0.5, p=1),
         ], p=distortion_p),
-        albumentations.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=color_p)
+        albumentations.OneOf([
+            albumentations.HueSaturationValue(10, 15, 10, p=1),
+            albumentations.CLAHE(clip_limit=2, p=1),
+            albumentations.RandomBrightnessContrast(p=1),
+            albumentations.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=1)
+        ], p=color_p)
     ] + resizing)
+

@@ -23,7 +23,7 @@ def get_hubmap_mean_std():
 def get_training_validation_sets(images_path: str,
                                  masks_path: str,
                                  validation_percentage: float,
-                                 dataset_augmentations: Dict,
+                                 transform: Dict,
                                  device: str,
                                  mean: Optional[List[float]] = None,
                                  std: Optional[List[float]] = None) -> Tuple[Dataset, set, Dataset, set]:
@@ -33,8 +33,8 @@ def get_training_validation_sets(images_path: str,
     :param images_path: path of the folder containing all the images
     :param masks_path: path of the folder containing all the masks
     :param validation_percentage: percentage of samples used to populate the validation split
-    :param dataset_augmentations: transformations for the training and validation sets
-    :param device the device used 'cpu' or 'cuda'
+    :param transform: transformations for the training and validation sets
+    :param device: the device used 'cpu' or 'cuda'
     :param mean: mean for each channel (RGB)
     :param std: standard deviation of each channel (RGB)
 
@@ -55,7 +55,7 @@ def get_training_validation_sets(images_path: str,
                                  device,
                                  mean,
                                  std,
-                                 augmentations=dataset_augmentations['train'])
+                                 augmentations=transform['train'])
 
     validation_set = HuBMAPDataset(list(validation_images),
                                    images_path,
@@ -63,7 +63,7 @@ def get_training_validation_sets(images_path: str,
                                    device,
                                    mean,
                                    std,
-                                   augmentations=dataset_augmentations['val'])
+                                   augmentations=transform['val'])
 
     return training_set, training_images, validation_set, validation_images
 
