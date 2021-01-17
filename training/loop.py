@@ -245,7 +245,6 @@ class Trainer:
                  batch_size: int,
                  training_dataset: HuBMAPDataset,
                  validation_dataset: Optional[HuBMAPDataset] = None,
-                 writer: torch.utils.tensorboard.writer.SummaryWriter = None,
                  use_wandb: bool = False):
         """
         :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
@@ -272,7 +271,6 @@ class Trainer:
         self.mean = training_dataset.mean
         self.std = training_dataset.std
 
-        self.writer = writer
         self.use_wandb = use_wandb
 
         # Frequency for tensors and images during training and evaluation
@@ -302,38 +300,38 @@ class Trainer:
         print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
     def write_on_tensorboard(self,
+                             writer: SummaryWriter,
                              train_stats: Statistics,
                              val_stats: Statistics,
                              epoch: int):
         """
         Update the parameters on local TensorBoard.
 
+        :param writer: the TensorBoard summary writer
         :param train_stats: training statistics
         :param val_stats: validation statistics
         :param epoch: current epoch
         """
-        if self.writer is None:
-            return
         # Plot to tensorboard
         if 'lr' in train_stats.metrics:
-            self.writer.add_scalar('Hyperparameters/Learning Rate', train_stats.read_metric(epoch, 'lr'), epoch)
-        self.writer.add_scalars('Losses', {
+            writer.add_scalar('Hyperparameters/Learning Rate', train_stats.read_metric(epoch, 'lr'), epoch)
+        writer.add_scalars('Losses', {
             "Train Loss": train_stats.read_metric(epoch, 'loss'),
             "Val Loss": val_stats.read_metric(epoch, 'loss')
         }, epoch)
-        self.writer.add_scalars('Metrics/IoU', {
+        writer.add_scalars('Metrics/IoU', {
             "Train IoU": train_stats.read_metric(epoch, 'iou'),
             "Val IoU": val_stats.read_metric(epoch, 'iou'),
         }, epoch)
-        self.writer.add_scalars('Metrics/Dice Coefficient', {
+        writer.add_scalars('Metrics/Dice Coefficient', {
             "Train Dice Coefficient": train_stats.read_metric(epoch, 'dice_coefficient'),
             "Val Dice Coefficient": val_stats.read_metric(epoch, 'dice_coefficient'),
         }, epoch)
-        self.writer.add_scalars('Metrics/Pixel Accuracy', {
+        writer.add_scalars('Metrics/Pixel Accuracy', {
             "Train Pixel Accuracy": train_stats.read_metric(epoch, 'pixel_accuracy'),
             "Val Pixel Accuracy": val_stats.read_metric(epoch, 'pixel_accuracy'),
         }, epoch)
-        self.writer.flush()
+        writer.flush()
 
     def write_on_wandb(self,
                        train_stats: Statistics,
@@ -463,6 +461,7 @@ class Trainer:
               early_stopping: Optional[EarlyStopping] = None,
               verbosity_level: List[TrainerVerbosity] = (),
               evaluation_verbosity_level: List[TrainerVerbosity] = (),
+              writer: SummaryWriter = None,
               training_limit: int = math.inf,
               evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
@@ -478,6 +477,7 @@ class Trainer:
         :param early_stopping: early stopping policy and tracker
         :param verbosity_level: list containing different keys for each type of requested information (training)
         :param evaluation_verbosity_level: list containing different keys for each type of requested information
+        :param writer: the TensorBoard summary writer
         :param training_limit: the number of batches to debug TODO remove this
         :param evaluation_limit: the number of batches to debug in evaluation TODO remove this
         :return: statistics of training and if required of evaluation
@@ -623,7 +623,8 @@ class Trainer:
                     print(f"{'-' * 100}\nValidation phase:")
                 self.evaluate(model, epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
 
-            self.write_on_tensorboard(stats, eval_stats, epoch)
+            if writer:
+                self.write_on_tensorboard(writer, stats, eval_stats, epoch)
             self.write_on_wandb(stats, eval_stats, epoch)
 
             if scheduler:
@@ -642,15 +643,15 @@ class Trainer:
                     if weights_dir is not None and weights_dir != '':
                         torch.save(model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
-                    if self.writer:
-                        self.writer.close()
+                    if writer:
+                        writer.close()
 
                     return stats, eval_stats
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f"{'=' * 100}")
 
-        if self.writer:
-            self.writer.close()
+        if writer:
+            writer.close()
 
         return stats, eval_stats
