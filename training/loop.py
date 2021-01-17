@@ -239,7 +239,6 @@ class Trainer:
     """
 
     def __init__(self,
-                 model: Module,
                  threshold: float,
                  criterion: Module,
                  optimizer: torch.optim.Optimizer,
@@ -249,7 +248,6 @@ class Trainer:
                  writer: torch.utils.tensorboard.writer.SummaryWriter = None,
                  use_wandb: bool = False):
         """
-        :param model: model to train
         :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
         :param criterion: loss function
         :param optimizer: optimizer used during training
@@ -260,7 +258,6 @@ class Trainer:
         project.
         """
 
-        self.model = model
         self.threshold = threshold
         self.criterion = criterion
         self.optimizer = optimizer
@@ -365,6 +362,7 @@ class Trainer:
             "Val Pixel Accuracy": val_stats.read_metric(epoch, 'pixel_accuracy')})
 
     def evaluate(self,
+                 model: Module,
                  epoch: int,
                  stats: Statistics,
                  verbosity_level: List[TrainerVerbosity] = (),
@@ -372,6 +370,7 @@ class Trainer:
         """
         Method used to evaluate the model
 
+        :param model: model to train
         :param epoch: current epoch
         :param stats: statistics tracker
         :param verbosity_level: List containing different keys for each type of requested information
@@ -397,7 +396,7 @@ class Trainer:
 
                 batch_start_time = time.time()
 
-                outputs = self.model(images)
+                outputs = model(images)
 
                 # To handle torchvision.models
                 if type(outputs) is OrderedDict:
@@ -455,6 +454,7 @@ class Trainer:
             print(f"{'-' * 100}")
 
     def train(self,
+              model: Module,
               epochs: int,
               saving_frequency: int = 1,
               scheduler: Optional[SchedulerWrapper] = None,
@@ -468,6 +468,7 @@ class Trainer:
         """
         Train the model
 
+        :param model: model to train
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
         in DD_MM_YY_HH_MM_SS format
@@ -486,7 +487,7 @@ class Trainer:
             weights_dir = datetime.now().strftime('%d_%m_%y_%H_%M_%S')
 
         # Set training mode
-        self.model.train()
+        model.train()
 
         stats_keys = ['epoch_time',
                       'batch_time',
@@ -542,7 +543,7 @@ class Trainer:
                 # Zero the parameter gradients
                 self.optimizer.zero_grad()
 
-                outputs = self.model(images)
+                outputs = model(images)
 
                 # To handle torchvision.models
                 if type(outputs) is OrderedDict:
@@ -609,7 +610,7 @@ class Trainer:
                 saving_path = os.path.join(weights_dir, f'weights_{epoch}.pt')
                 if TrainerVerbosity.PROGRESS in verbosity_level:
                     print('\nSaved model at', saving_path)
-                torch.save(self.model.state_dict(), saving_path)
+                torch.save(model.state_dict(), saving_path)
 
             stats.update(epoch, 'epoch_time', time.time() - epoch_start_time)
 
@@ -620,7 +621,7 @@ class Trainer:
             if evaluate:
                 if TrainerVerbosity.PROGRESS in verbosity_level:
                     print(f"{'-' * 100}\nValidation phase:")
-                self.evaluate(epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
+                self.evaluate(model, epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
 
             self.write_on_tensorboard(stats, eval_stats, epoch)
             self.write_on_wandb(stats, eval_stats, epoch)
@@ -639,7 +640,7 @@ class Trainer:
 
                     # Save
                     if weights_dir is not None and weights_dir != '':
-                        torch.save(self.model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
+                        torch.save(model.state_dict(), os.path.join(weights_dir, f'weights_{epoch}.pt'))
 
                     if self.writer:
                         self.writer.close()

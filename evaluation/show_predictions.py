@@ -25,8 +25,10 @@ def show_predictions(model: nn.Module,
                      model_output_logits: bool = True,
                      images_to_show: bool = 10,
                      threshold: float = 0.5,
-                     threshold_wrong_fg_percentage: float = 0,
-                     threshold_wrong_bg_percentage: float = 0,
+                     min_wrong_fg_percentage: float = 0,
+                     min_wrong_bg_percentage: float = 0,
+                     max_wrong_fg_percentage: float = 100,
+                     max_wrong_bg_percentage: float = 100,
                      verbose=False) -> None:
     """
 
@@ -38,8 +40,10 @@ def show_predictions(model: nn.Module,
     :param model_output_logits: if True apply the sigmoid
     :param images_to_show: number of images to show before quitting
     :param threshold: threshold applied to the predicted mask
-    :param threshold_wrong_fg_percentage: minimum percentage of wrong foreground pixels to show the image
-    :param threshold_wrong_bg_percentage: minimum percentage of wrong background pixels to show the image
+    :param min_wrong_fg_percentage: minimum percentage of wrong foreground pixels to show the image
+    :param min_wrong_bg_percentage: minimum percentage of wrong background pixels to show the image
+    :param max_wrong_fg_percentage: maximum percentage of wrong foreground pixels to show the image
+    :param max_wrong_bg_percentage: maximum percentage of wrong background pixels to show the image
     :param verbose: if True print error percentages
 
     """
@@ -68,8 +72,10 @@ def show_predictions(model: nn.Module,
             # Count wrong bg pixels
             wrong_bg_percentage = (((pred == 1) & (mask == 0)).sum() * 100) / (image_size ** 2)
 
-            if wrong_fg_percentage >= threshold_wrong_fg_percentage \
-                    or wrong_bg_percentage >= threshold_wrong_bg_percentage:
+            if (wrong_fg_percentage >= min_wrong_fg_percentage
+                    and (100 - wrong_fg_percentage) <= max_wrong_fg_percentage) \
+                    or (wrong_bg_percentage >= min_wrong_bg_percentage
+                        and (100 - wrong_bg_percentage) <= max_wrong_bg_percentage):
                 if verbose:
                     print('\nWrong fg percentage:', wrong_fg_percentage)
                     print('Wrong bg percentage:', wrong_bg_percentage, '\n')

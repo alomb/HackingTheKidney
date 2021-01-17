@@ -2,6 +2,7 @@ import albumentations
 
 import numpy as np
 import cv2
+from typing import Dict
 
 from albumentations import RandomRotate90
 import albumentations.augmentations.functional as F
@@ -71,7 +72,8 @@ def get_dihedral_transformations(probability: float = 1) -> albumentations.OneOf
 def get_augmentations(dihedral_p: float = 0.5,
                       distortion_p: float = 0.33,
                       color_p: float = 0.25,
-                      resize_size: int = None) -> albumentations.Compose:
+                      resize_size: int = None,
+                      targets: Dict[str, str] = None) -> albumentations.Compose:
     """
     Compose:
     - dihedral augmentations
@@ -81,6 +83,8 @@ def get_augmentations(dihedral_p: float = 0.5,
     :param distortion_p: probability to apply the distortion augmentation
     :param color_p: probability to apply the color augmentation
     :param resize_size: size used to resize both train and test images if None resizing is not applied
+    :param targets: Dict with keys - new target name, values - old target name.
+                    To be used in order to transform multiple images with the same augmentation
     :return: a composition of augmentations
     """
 
@@ -101,5 +105,5 @@ def get_augmentations(dihedral_p: float = 0.5,
             albumentations.RandomBrightnessContrast(p=1),
             albumentations.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=1)
         ], p=color_p)
-    ] + resizing)
+    ] + resizing, additional_targets=targets)
 
