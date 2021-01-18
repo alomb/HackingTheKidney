@@ -18,7 +18,7 @@ import wandb
 
 import torch
 from torch.nn import Module
-from torch.optim import Optimizer, lr_scheduler
+from torch.optim import Optimizer
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -454,7 +454,7 @@ class Trainer:
               optimizer: Optimizer,
               epochs: int,
               saving_frequency: int = 1,
-              scheduler: Optional[lr_scheduler] = None,
+              scheduler=None,
               weights_dir: str = 'dmyhms',
               evaluate: bool = True,
               early_stopping: Optional[EarlyStopping] = None,
