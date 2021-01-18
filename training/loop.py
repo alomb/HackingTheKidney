@@ -263,8 +263,6 @@ class Trainer:
         self.mean = training_dataset.mean
         self.std = training_dataset.std
 
-        self.use_wandb = use_wandb
-
         # Frequency for tensors and images during training and evaluation
         self.image_tensor_train_freq = 1
         self.image_tensor_eval_freq = 1
