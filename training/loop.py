@@ -18,7 +18,7 @@ import wandb
 
 import torch
 from torch.nn import Module
-from torch.optim import Optimizer
+from torch.optim import Optimizer, lr_scheduler
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -243,15 +243,12 @@ class Trainer:
                  threshold: float,
                  batch_size: int,
                  training_dataset: HuBMAPDataset,
-                 validation_dataset: Optional[HuBMAPDataset] = None,
-                 use_wandb: bool = False):
+                 validation_dataset: Optional[HuBMAPDataset] = None):
         """
         :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
         :param batch_size: size of batches used to create a DataLoader
         :param training_dataset: custom dataset to retrieve images and masks for training
         :param validation_dataset: optional custom dataset to retrieve images and masks for validation
-        :param use_wandb: if True it logs data directly to W&B. It expects wandb already initialized to the correct
-        project.
         """
 
         self.threshold = threshold
@@ -339,8 +336,6 @@ class Trainer:
         :param val_stats: validation statistics
         :param epoch: current epoch
         """
-        if self.use_wandb is False:
-            return
         if 'lr' in train_stats.metrics:
             wandb.log({"Learning Rate": train_stats.read_metric(epoch, 'lr')}, commit=False)
 
@@ -454,13 +449,14 @@ class Trainer:
               optimizer: Optimizer,
               epochs: int,
               saving_frequency: int = 1,
-              scheduler=None,
+              scheduler: Optional[Union[lr_scheduler]] = None,
               weights_dir: str = 'dmyhms',
               evaluate: bool = True,
               early_stopping: Optional[EarlyStopping] = None,
               verbosity_level: List[TrainerVerbosity] = (),
               evaluation_verbosity_level: List[TrainerVerbosity] = (),
               writer: SummaryWriter = None,
+              use_wandb=False,
               training_limit: int = math.inf,
               evaluation_limit: int = math.inf) -> Tuple[Statistics, Optional[Statistics]]:
         """
@@ -479,6 +475,7 @@ class Trainer:
         :param verbosity_level: list containing different keys for each type of requested information (training)
         :param evaluation_verbosity_level: list containing different keys for each type of requested information
         :param writer: the TensorBoard summary writer
+        :param use_wandb: if True it logs data directly to W&B. It expects wandb already initialized to the correct project
         :param training_limit: the number of batches to debug TODO remove this
         :param evaluation_limit: the number of batches to debug in evaluation TODO remove this
         :return: statistics of training and if required of evaluation
@@ -523,6 +520,15 @@ class Trainer:
             if not os.path.exists(weights_dir):
                 os.makedirs(weights_dir, exist_ok=True)
 
+        if use_wandb:
+            wandb.config.update({"Model": str(model),
+                                 "Threshold": self.threshold,
+                                 "Criterion": str(criterion),
+                                 "Optimizer": str(optimizer),
+                                 "Scheduler": str(scheduler),
+                                 "Batch size": self.batch_size,
+                                 "Epochs": epochs})
+
         for epoch in range(1, epochs + 1):
             epoch_start_time = time.time()
 
@@ -557,13 +563,6 @@ class Trainer:
                 # Backward and optimize
                 loss.backward()
                 optimizer.step()
-
-                # If the scheduler is defined update it
-                if sched_wrapper:
-                    if type(sched_wrapper.scheduler) is CosineAnnealingWarmRestarts:
-                        sched_wrapper.step({'epoch': epoch + i / len(self.training_data_loader)})
-                    elif type(sched_wrapper.scheduler) is not ReduceLROnPlateau:
-                        sched_wrapper.step()
 
                 # To deal with models that have contexts like HookNet
                 if type(outputs) in [tuple, list]:
@@ -628,12 +627,18 @@ class Trainer:
 
             if writer:
                 self.write_on_tensorboard(writer, stats, eval_stats, epoch)
-            self.write_on_wandb(stats, eval_stats, epoch)
 
+            if use_wandb:
+                self.write_on_wandb(stats, eval_stats, epoch)
+
+            # If the scheduler is defined update it
             if sched_wrapper:
-                if type(sched_wrapper.scheduler) is ReduceLROnPlateau:
+                if type(sched_wrapper.scheduler) is CosineAnnealingWarmRestarts:
+                    sched_wrapper.step({'epoch': epoch + i / len(self.training_data_loader)})
+                elif type(sched_wrapper.scheduler) is ReduceLROnPlateau:
                     sched_wrapper.step({'metrics': eval_stats.read_metric(epoch, 'loss')})
-
+                else:
+                    sched_wrapper.step()
                 # Apply scheduler resetting
                 sched_wrapper.reset(epoch)
 
