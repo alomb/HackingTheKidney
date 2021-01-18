@@ -19,6 +19,7 @@ import wandb
 
 import torch
 from torch.nn import Module
+from torch.optim import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -240,16 +241,12 @@ class Trainer:
 
     def __init__(self,
                  threshold: float,
-                 criterion: Module,
-                 optimizer: torch.optim.Optimizer,
                  batch_size: int,
                  training_dataset: HuBMAPDataset,
                  validation_dataset: Optional[HuBMAPDataset] = None,
                  use_wandb: bool = False):
         """
         :param threshold: minimum value used to threshold model's outputs: predicted mask = output > threshold
-        :param criterion: loss function
-        :param optimizer: optimizer used during training
         :param batch_size: size of batches used to create a DataLoader
         :param training_dataset: custom dataset to retrieve images and masks for training
         :param validation_dataset: optional custom dataset to retrieve images and masks for validation
@@ -258,8 +255,6 @@ class Trainer:
         """
 
         self.threshold = threshold
-        self.criterion = criterion
-        self.optimizer = optimizer
         self.batch_size = batch_size
         self.training_data_loader = DataLoader(training_dataset,
                                                batch_size=batch_size,
@@ -361,6 +356,7 @@ class Trainer:
 
     def evaluate(self,
                  model: Module,
+                 criterion: Module,
                  epoch: int,
                  stats: Statistics,
                  verbosity_level: List[TrainerVerbosity] = (),
@@ -369,6 +365,7 @@ class Trainer:
         Method used to evaluate the model
 
         :param model: model to train
+        :param criterion: loss function
         :param epoch: current epoch
         :param stats: statistics tracker
         :param verbosity_level: List containing different keys for each type of requested information
@@ -400,7 +397,7 @@ class Trainer:
                 if type(outputs) is OrderedDict:
                     outputs = outputs['out']
 
-                loss = self.criterion(outputs, masks)
+                loss = criterion(outputs, masks)
 
                 # To deal with models that have contexts like HookNet
                 if type(outputs) in [tuple, list]:
@@ -453,6 +450,8 @@ class Trainer:
 
     def train(self,
               model: Module,
+              criterion: Module,
+              optimizer: Optimizer,
               epochs: int,
               saving_frequency: int = 1,
               scheduler: Optional[SchedulerWrapper] = None,
@@ -468,6 +467,8 @@ class Trainer:
         Train the model
 
         :param model: model to train
+        :param criterion: loss function
+        :param optimizer: optimizer used during training
         :param epochs: number of epochs used to train
         :param weights_dir: path of the directory from the root used to save weights. If "dmyhms" uses the current date
         in DD_MM_YY_HH_MM_SS format
@@ -525,7 +526,7 @@ class Trainer:
 
             if TrainerVerbosity.PROGRESS in verbosity_level:
                 print(f'Training epoch {epoch}/{epochs}:')
-                print(f'(Learning rate is {self.optimizer.param_groups[0]["lr"]})')
+                print(f'(Learning rate is {optimizer.param_groups[0]["lr"]})')
                 data_stream = tqdm(iter(self.training_data_loader))
             else:
                 data_stream = iter(self.training_data_loader)
@@ -541,7 +542,7 @@ class Trainer:
                 batch_start_time = time.time()
 
                 # Zero the parameter gradients
-                self.optimizer.zero_grad()
+                optimizer.zero_grad()
 
                 outputs = model(images)
 
@@ -549,11 +550,11 @@ class Trainer:
                 if type(outputs) is OrderedDict:
                     outputs = outputs['out']
 
-                loss = self.criterion(outputs, masks)
+                loss = criterion(outputs, masks)
 
                 # Backward and optimize
                 loss.backward()
-                self.optimizer.step()
+                optimizer.step()
 
                 # If the scheduler is defined update it
                 if scheduler:
@@ -604,7 +605,7 @@ class Trainer:
                 stats.update(epoch, 'dice_coefficient', dice_coefficient(preds, masks).mean().item())
                 stats.update(epoch, 'pixel_accuracy', pixel_accuracy(preds, masks).mean().item())
                 stats.update(epoch, 'batch_time', time.time() - batch_start_time)
-                stats.update(epoch, 'lr', self.optimizer.param_groups[0]['lr'])
+                stats.update(epoch, 'lr', optimizer.param_groups[0]['lr'])
 
             if weights_dir is not None and weights_dir != '' and (epoch - 1) % saving_frequency == 0:
                 saving_path = os.path.join(weights_dir, f'weights_{epoch}.pt')
@@ -621,7 +622,7 @@ class Trainer:
             if evaluate:
                 if TrainerVerbosity.PROGRESS in verbosity_level:
                     print(f"{'-' * 100}\nValidation phase:")
-                self.evaluate(model, epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
+                self.evaluate(model, criterion, epoch, eval_stats, evaluation_verbosity_level, limit=evaluation_limit)
 
             if writer:
                 self.write_on_tensorboard(writer, stats, eval_stats, epoch)

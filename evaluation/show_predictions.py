@@ -72,10 +72,10 @@ def show_predictions(model: nn.Module,
             # Count wrong bg pixels
             wrong_bg_percentage = (((pred == 1) & (mask == 0)).sum() * 100) / (image_size ** 2)
 
-            if (wrong_fg_percentage >= min_wrong_fg_percentage
-                    and (100 - wrong_fg_percentage) <= max_wrong_fg_percentage) \
-                    or (wrong_bg_percentage >= min_wrong_bg_percentage
-                        and (100 - wrong_bg_percentage) <= max_wrong_bg_percentage):
+            if wrong_fg_percentage >= min_wrong_fg_percentage \
+                    and (100 - wrong_fg_percentage) <= max_wrong_fg_percentage \
+                    and (wrong_bg_percentage >= min_wrong_bg_percentage
+                         and (100 - wrong_bg_percentage) <= max_wrong_bg_percentage):
                 if verbose:
                     print('\nWrong fg percentage:', wrong_fg_percentage)
                     print('Wrong bg percentage:', wrong_bg_percentage, '\n')
