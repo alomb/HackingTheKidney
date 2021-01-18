@@ -449,7 +449,7 @@ class Trainer:
               optimizer: Optimizer,
               epochs: int,
               saving_frequency: int = 1,
-              scheduler: Optional[Union[lr_scheduler]] = None,
+              scheduler=None,
               weights_dir: str = 'dmyhms',
               evaluate: bool = True,
               early_stopping: Optional[EarlyStopping] = None,
