@@ -11,7 +11,6 @@ from typing import Union, Optional, List, Dict, Tuple, Callable
 
 import numpy as np
 import pandas as pd
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torchvision.transforms import transforms
 from functools import partial
 from tqdm import tqdm
@@ -19,7 +18,8 @@ import wandb
 
 import torch
 from torch.nn import Module
-from torch.optim import Optimizer
+from torch.optim import Optimizer, lr_scheduler
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -287,12 +287,12 @@ class Trainer:
         # Time is already indicated by tqdm
         if print_epoch_time:
             print('Epoch/Evaluation ended in', round(stats.stats[epoch]['epoch_time'][-1]), 'seconds')
-        print('Average batch time \t', round(np.mean(stats.stats[epoch]['batch_time']).item()), 'seconds')
-        print('Average loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']).item(), 4))
+        print('Average Batch Time \t', round(np.mean(stats.stats[epoch]['batch_time']).item()), 'seconds')
+        print('Average Loss \t\t\t', round(np.mean(stats.stats[epoch]['loss']).item(), 4))
         print('Metrics:')
         print('Average IoU \t\t\t', np.mean(stats.stats[epoch]['iou']))
-        print('Average dice coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
-        print('Average pixel accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
+        print('Average Dice Coefficient \t', np.mean(stats.stats[epoch]['dice_coefficient']))
+        print('Average Pixel Accuracy \t\t', np.mean(stats.stats[epoch]['pixel_accuracy']))
 
     def write_on_tensorboard(self,
                              writer: SummaryWriter,
@@ -454,7 +454,7 @@ class Trainer:
               optimizer: Optimizer,
               epochs: int,
               saving_frequency: int = 1,
-              scheduler: Optional[SchedulerWrapper] = None,
+              scheduler: Optional[lr_scheduler] = None,
               weights_dir: str = 'dmyhms',
               evaluate: bool = True,
               early_stopping: Optional[EarlyStopping] = None,
@@ -486,6 +486,8 @@ class Trainer:
 
         if weights_dir is 'dmyhms':
             weights_dir = datetime.now().strftime('%d_%m_%y_%H_%M_%S')
+
+        sched_wrapper = SchedulerWrapper(scheduler, reset_strategy=None) if scheduler else None
 
         # Set training mode
         model.train()
@@ -557,11 +559,11 @@ class Trainer:
                 optimizer.step()
 
                 # If the scheduler is defined update it
-                if scheduler:
-                    if type(scheduler.scheduler) is CosineAnnealingWarmRestarts:
-                        scheduler.step({'epoch': epoch + i / len(self.training_data_loader)})
-                    elif type(scheduler.scheduler) is not ReduceLROnPlateau:
-                        scheduler.step()
+                if sched_wrapper:
+                    if type(sched_wrapper.scheduler) is CosineAnnealingWarmRestarts:
+                        sched_wrapper.step({'epoch': epoch + i / len(self.training_data_loader)})
+                    elif type(sched_wrapper.scheduler) is not ReduceLROnPlateau:
+                        sched_wrapper.step()
 
                 # To deal with models that have contexts like HookNet
                 if type(outputs) in [tuple, list]:
@@ -628,12 +630,12 @@ class Trainer:
                 self.write_on_tensorboard(writer, stats, eval_stats, epoch)
             self.write_on_wandb(stats, eval_stats, epoch)
 
-            if scheduler:
-                if type(scheduler.scheduler) is ReduceLROnPlateau:
-                    scheduler.step({'metrics': eval_stats.read_metric(epoch, 'loss')})
+            if sched_wrapper:
+                if type(sched_wrapper.scheduler) is ReduceLROnPlateau:
+                    sched_wrapper.step({'metrics': eval_stats.read_metric(epoch, 'loss')})
 
                 # Apply scheduler resetting
-                scheduler.reset(epoch)
+                sched_wrapper.reset(epoch)
 
             if early_stopping:
                 if early_stopping.step(eval_stats.read_metric(epoch, 'loss')):
