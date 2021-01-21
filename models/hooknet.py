@@ -155,7 +155,7 @@ class HookNetDecoder(nn.Module):
         :return: the predicted mask and the features computed at each depth
         """
 
-        # Remove first skip with same spatial resolution
+        # Remove first feature with 3 channels
         features = features[1:]
         # Reverse channels to start from head of encoder
         features = features[::-1]
@@ -315,8 +315,10 @@ class HookNet(nn.Module):
 
         # Change the number of channels expected by the target branch decoder path because of hooking mechanism
         target_encoder_out_channels = list(self.target_encoder.out_channels)
+        old_target_encoder_head_out_channels = target_encoder_out_channels[-1]
         target_encoder_out_channels[-1] += decoder_channels[int(self.hook_depth)]
-        print("Encoder out channels with hooking", target_encoder_out_channels)
+        print(f"Number of channels in the encoder's head goes from {old_target_encoder_head_out_channels} to "
+              f"{target_encoder_out_channels[-1]} with hooking.")
 
         self.target_decoder = HookNetDecoder(encoder_channels=target_encoder_out_channels,
                                              decoder_channels=decoder_channels,
@@ -369,8 +371,6 @@ class HookNet(nn.Module):
         target_enc_features = self.target_encoder(x[0])
 
         # Hooking
-        # Extract and cut from the specific depth the region and concatenate it to the target features in the bottleneck
-
         # Get the head resolution size of the target's encoder
         target_head_width = target_enc_features[-1].shape[2]
         target_head_height = target_enc_features[-1].shape[3]
@@ -380,6 +380,7 @@ class HookNet(nn.Module):
         context_hooked_width = context_dec_features[int(self.hook_depth)].shape[2]
         context_hooked_height = context_dec_features[int(self.hook_depth)].shape[3]
 
+        # Cut from the context branch at the computed depth the corresponding centered region
         hooked_feature = context_dec_features[int(self.hook_depth)][:,
                          :,
                          (context_hooked_width - target_head_width) // 2:
@@ -392,7 +393,7 @@ class HookNet(nn.Module):
             print("Context encoding feature shape", context_dec_features[int(self.hook_depth)].shape)
             print("Hooked feature shape", hooked_feature.shape)
 
-        # Hook
+        # Hooking as a concatenation in the target's bottleneck/encoder head
         target_enc_features[-1] = torch.cat([target_enc_features[-1], hooked_feature], dim=1)
 
         target_output, _ = self.target_decoder(*target_enc_features)
