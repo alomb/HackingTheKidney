@@ -82,7 +82,7 @@ def get_deeplabv3plus(device: str,
                               encoder_depth=depth,
                               encoder_weights=encoder_weights,
                               decoder_channels=decoder_channels,
-                              upsampling=8,
+                              upsampling=4,
                               in_channels=3,
                               classes=1,
                               activation=activation).to(device)
