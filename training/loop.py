@@ -365,6 +365,7 @@ class Trainer:
         :param limit TODO remove this
         """
 
+        model.eval()
         with torch.no_grad():
             epoch_start_time = time.time()
 

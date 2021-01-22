@@ -1,8 +1,27 @@
-from typing import Tuple
+from typing import Tuple, List
+
+from PIL import Image
+from torchvision import transforms as T
 
 import numpy as np
+import random
 
 import torch
+
+
+def convert_to_tensors(img_path: str,
+                       mask_path: str,
+                       mean: List[float],
+                       std: List[float],
+                       device: str = 'cpu') -> Tuple[torch.FloatTensor, torch.LongTensor]:
+    image = np.array(Image.open(img_path).convert('RGB'))
+    # A HxW numpy array
+    mask = np.array(Image.open(mask_path))
+    to_tensor = T.Compose([T.ToTensor(),
+                           T.Normalize(mean, std)])
+    image = to_tensor(image).to(device)
+    mask = torch.from_numpy(np.array(mask)).long().to(device)
+    return image, mask
 
 
 def rle_decode(mask_rle: str,
@@ -116,14 +135,14 @@ def get_device_colab() -> str:
     return device
 
 
-def set_deterministic_colab(seed: int,
-                            set_deterministic: bool = False) -> None:
+def set_deterministic(seed: int,
+                      pytorch_deterministic: bool = False) -> None:
     """
     Set a deterministic behaviour.
     https://pytorch.org/docs/stable/notes/randomness.html
 
     :param seed: the seed to set for PyTorch and Numpy
-    :param set_deterministic: if True configure PyTorch to use deterministic algorithms instead of nondeterministic
+    :param pytorch_deterministic: if True configure PyTorch to use deterministic algorithms instead of nondeterministic
     ones where available, and to throw an error if an operation is known to be nondeterministic (and without a
     deterministic alternative).
 
@@ -132,6 +151,7 @@ def set_deterministic_colab(seed: int,
 
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
 
     # Configure cuDNN to deterministically select an algorithm at each run
     # Set False to change this behaviour, performance may be impacted
@@ -140,7 +160,7 @@ def set_deterministic_colab(seed: int,
     torch.backends.cudnn.deterministic = True
 
     # Configure PyTorch to use deterministic algorithms
-    if set_deterministic:
+    if pytorch_deterministic:
         version = torch.__version__.split('+')[0]
         major, minor, patch = version.split(".")
         major, minor, patch = int(major), int(minor), int(patch)
