@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Tuple
+from typing import List
 
 import os
 import sys
@@ -12,7 +12,7 @@ import torch.nn as nn
 import torchvision.transforms as T
 
 from utils import convert_to_tensors
-from preprocess.dataset import HuBMAPDataset, denormalize_images
+from preprocess.dataset import denormalize_images
 from visualization.visualize_data import display_images_and_masks
 
 
